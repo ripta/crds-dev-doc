@@ -56,6 +56,8 @@ const (
 	defaultListenAddr = ":5002"
 )
 
+var ErrNoTagFound = errors.New("no tag found")
+
 func main() {
 	dsn := os.Getenv("CRDS_DEV_STORAGE_DSN")
 	if dsn == "" {
@@ -103,13 +105,14 @@ type tag struct {
 
 // Index indexes a git repo at the specified url.
 func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
-	log.Printf("Indexing repo %s/%s@%s\n", gRepo.Org, gRepo.Repo, gRepo.Tag)
-
-	dir, err := os.MkdirTemp(os.TempDir(), "doc-gitter")
+	dir, err := os.MkdirTemp(os.TempDir(), "doc-gitter-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
+
+	log.Printf("Indexing repo %s/%s@%s into %s\n", gRepo.Org, gRepo.Repo, gRepo.Tag, dir)
+	defer log.Printf("Finished indexing %s/%s\n", gRepo.Org, gRepo.Repo)
 
 	fullRepo := fmt.Sprintf("%s/%s/%s", "github.com", strings.ToLower(gRepo.Org), strings.ToLower(gRepo.Repo))
 	cloneOpts := &git.CloneOptions{
@@ -124,15 +127,15 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	}
 	repo, err := git.PlainClone(dir, false, cloneOpts)
 	if err != nil {
-		return err
+		return fmt.Errorf("git clone error: %w", err)
 	}
 	iter, err := repo.Tags()
 	if err != nil {
-		return err
+		return fmt.Errorf("git tags error: %w", err)
 	}
 	w, err := repo.Worktree()
 	if err != nil {
-		return err
+		return fmt.Errorf("git worktree error: %w", err)
 	}
 	// Get CRDs for each tag
 	tags := []tag{}
@@ -153,8 +156,14 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 		}
 		return nil
 	}); err != nil {
-		log.Println(err)
+		log.Println("Error iterating tags:", err)
 	}
+
+	if len(tags) == 0 {
+		log.Printf("No tags found for repo %s/%s@%s\n", gRepo.Org, gRepo.Repo, gRepo.Tag)
+		return fmt.Errorf("repo %s/%s@%s: %w", gRepo.Org, gRepo.Repo, gRepo.Tag, ErrNoTagFound)
+	}
+
 	for _, t := range tags {
 		h, err := repo.ResolveRevision(plumbing.Revision(t.hash.String()))
 		if err != nil || h == nil {
@@ -170,11 +179,11 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 		var tagID int
 		if err := r.Scan(&tagID); err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
-				return err
+				return fmt.Errorf("error querying tags from database: %w", err)
 			}
 			r := g.conn.QueryRow(context.Background(), "INSERT INTO tags(name, repo, time) VALUES ($1, $2, $3) RETURNING id", t.name, fullRepo, c.Committer.When)
 			if err := r.Scan(&tagID); err != nil {
-				return err
+				return fmt.Errorf("error inserting tag into database: %w", err)
 			}
 		}
 		repoCRDs, err := getCRDsFromTag(dir, t.name, h, w)
@@ -188,12 +197,10 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 				allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
 			}
 			if _, err := g.conn.Exec(context.Background(), buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
-				return err
+				return fmt.Errorf("error inserting CRDs: %s@%s (%v)", repo, t.name, err)
 			}
 		}
 	}
-
-	log.Printf("Finished indexing %s/%s\n", gRepo.Org, gRepo.Repo)
 
 	return nil
 }

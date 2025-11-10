@@ -135,7 +135,9 @@ func worker(gitterChan <-chan models.GitterRepo, gitterAddr string) {
 
 		reply := ""
 		if err := client.Call("Gitter.Index", job, &reply); err != nil {
-			log.Print("Could not index repo")
+			log.Printf("Gitter could not index %s/%s@%s: %v", job.Org, job.Repo, job.Tag, err)
+		} else {
+			log.Printf("Gitter indexed %s/%s@%s without error", job.Org, job.Repo, job.Tag)
 		}
 	}
 }
