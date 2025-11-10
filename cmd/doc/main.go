@@ -54,6 +54,12 @@ var (
 	portEnv     = "PG_PORT"
 	dbEnv       = "PG_DB"
 
+	listenAddrEnv     = "DOC_LISTEN_ADDR"
+	defaultListenAddr = ":5001"
+
+	gitterAddrEnv     = "GITTER_ADDR"
+	defaultGitterAddr = "127.0.0.1:5002"
+
 	cookieDarkMode = "halfmoon_preferredMode"
 
 	address   string
@@ -123,12 +129,14 @@ type homeData struct {
 	Repos []string
 }
 
-func worker(gitterChan <-chan models.GitterRepo) {
+func worker(gitterChan <-chan models.GitterRepo, gitterAddr string) {
 	for job := range gitterChan {
-		client, err := rpc.DialHTTP("tcp", "127.0.0.1:1234")
+		client, err := rpc.DialHTTP("tcp", gitterAddr)
 		if err != nil {
-			log.Fatal("dialing:", err)
+			log.Print("dialing:", err)
+			continue
 		}
+
 		reply := ""
 		if err := client.Call("Gitter.Index", job, &reply); err != nil {
 			log.Print("Could not index repo")
@@ -157,7 +165,11 @@ func init() {
 
 func main() {
 	flag.Parse()
-	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", os.Getenv(userEnv), os.Getenv(passwordEnv), os.Getenv(hostEnv), os.Getenv(portEnv), os.Getenv(dbEnv))
+	dsn := os.Getenv("CRDS_DEV_STORAGE_DSN")
+	if dsn == "" {
+		dsn = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", os.Getenv(userEnv), os.Getenv(passwordEnv), os.Getenv(hostEnv), os.Getenv(portEnv), os.Getenv(dbEnv))
+	}
+
 	conn, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		panic(err)
@@ -167,8 +179,15 @@ func main() {
 		panic(err)
 	}
 
+	gitterAddr := defaultGitterAddr
+	if value, ok := os.LookupEnv(gitterAddrEnv); ok && value != "" {
+		gitterAddr = value
+	}
+
+	log.Println("Gitter address:", gitterAddr)
+
 	for i := 0; i < 4; i++ {
-		go worker(gitterChan)
+		go worker(gitterChan, gitterAddr)
 	}
 
 	start()
@@ -188,7 +207,12 @@ func getPageData(r *http.Request, title string, disableNavBar bool) pageData {
 }
 
 func start() {
-	log.Println("Starting Doc server...")
+	listenAddr := defaultListenAddr
+	if value, ok := os.LookupEnv(listenAddrEnv); ok && value != "" {
+		listenAddr = value
+	}
+
+	log.Println("Starting Doc server on", listenAddr)
 	r := mux.NewRouter().StrictSlash(true)
 	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./static/")))
 	r.HandleFunc("/", home)
@@ -198,7 +222,7 @@ func start() {
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag}", raw)
 	r.HandleFunc("/raw/github.com/{org}/{repo}", raw)
 	r.PathPrefix("/").HandlerFunc(doc)
-	log.Fatal(http.ListenAndServe(":5000", r))
+	log.Fatal(http.ListenAndServe(listenAddr, r))
 }
 
 func home(w http.ResponseWriter, r *http.Request) {

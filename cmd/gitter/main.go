@@ -51,10 +51,17 @@ const (
 	hostEnv     = "PG_HOST"
 	portEnv     = "PG_PORT"
 	dbEnv       = "PG_DB"
+
+	listenAddrEnv     = "GITTER_LISTEN_ADDR"
+	defaultListenAddr = ":5002"
 )
 
 func main() {
-	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", os.Getenv(userEnv), os.Getenv(passwordEnv), os.Getenv(hostEnv), os.Getenv(portEnv), os.Getenv(dbEnv))
+	dsn := os.Getenv("CRDS_DEV_STORAGE_DSN")
+	if dsn == "" {
+		dsn = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", os.Getenv(userEnv), os.Getenv(passwordEnv), os.Getenv(hostEnv), os.Getenv(portEnv), os.Getenv(dbEnv))
+	}
+
 	conn, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		panic(err)
@@ -68,11 +75,18 @@ func main() {
 	}
 	rpc.Register(gitter)
 	rpc.HandleHTTP()
-	l, e := net.Listen("tcp", ":1234")
+
+	listenAddr := defaultListenAddr
+	if v, ok := os.LookupEnv(listenAddrEnv); ok && v != "" {
+		listenAddr = v
+	}
+
+	l, e := net.Listen("tcp", listenAddr)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	log.Println("Starting gitter...")
+
+	log.Println("Starting gitter on", listenAddr)
 	http.Serve(l, nil)
 }
 
@@ -91,11 +105,12 @@ type tag struct {
 func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	log.Printf("Indexing repo %s/%s...\n", gRepo.Org, gRepo.Repo)
 
-	dir, err := ioutil.TempDir(os.TempDir(), "doc-gitter")
+	dir, err := os.MkdirTemp(os.TempDir(), "doc-gitter")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
+
 	fullRepo := fmt.Sprintf("%s/%s/%s", "github.com", strings.ToLower(gRepo.Org), strings.ToLower(gRepo.Repo))
 	cloneOpts := &git.CloneOptions{
 		URL:               fmt.Sprintf("https://%s", fullRepo),
