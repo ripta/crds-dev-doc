@@ -56,7 +56,7 @@ const (
 	listenAddrEnv     = "GITTER_LISTEN_ADDR"
 	defaultListenAddr = ":5002"
 
-	maxFileSize = 100 * 1024 // 100 KB
+	maxFileSize = 200 * 1024 // 200 KB
 	maxRuntime  = 1 * time.Minute
 	maxTagAge   = 4 * 365 * 24 * time.Hour // 4 years
 )
