@@ -27,6 +27,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	crdutil "github.com/crdsdev/doc/pkg/crd"
 	"github.com/crdsdev/doc/pkg/models"
@@ -62,7 +64,8 @@ var (
 
 	address string
 
-	gitterChan chan models.GitterRepo
+	gitterChan     chan models.GitterRepo
+	gitterPingTime atomic.Int64
 )
 
 // SchemaPlusParent is a JSON schema plus the name of the parent field.
@@ -92,6 +95,7 @@ type pageData struct {
 	DisableNavBar bool
 	IsDarkMode    bool
 	Title         string
+	IndexerAlive  bool
 }
 
 type baseData struct {
@@ -135,7 +139,40 @@ type homeData struct {
 	Repos []string
 }
 
-func worker(gitterChan <-chan models.GitterRepo, gitterAddr string) {
+func gitterPinger(gitterAddr string) {
+	ping := func() {
+		client, err := rpc.DialHTTP("tcp", gitterAddr)
+		if err != nil {
+			log.Print("dialing:", err)
+			return
+		}
+
+		reply := ""
+		if err := client.Call("Gitter.Ping", struct{}{}, &reply); err != nil {
+			log.Printf("Gitter ping error: %v", err)
+		} else {
+			gitterPingTime.Store(time.Now().Unix())
+			log.Printf("Gitter ping reply: %s", reply)
+		}
+	}
+
+	ping()
+
+	ticker := time.NewTicker(30 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			ping()
+		}
+	}
+}
+
+func gitterIsAlive() bool {
+	lastPing := gitterPingTime.Load()
+	return lastPing > 0 && time.Now().Unix()-lastPing <= 120
+}
+
+func gitterWorker(gitterChan <-chan models.GitterRepo, gitterAddr string) {
 	for job := range gitterChan {
 		client, err := rpc.DialHTTP("tcp", gitterAddr)
 		if err != nil {
@@ -188,8 +225,9 @@ func main() {
 
 	log.Println("Gitter address:", gitterAddr)
 
+	go gitterPinger(gitterAddr)
 	for i := 0; i < 4; i++ {
-		go worker(gitterChan, gitterAddr)
+		go gitterWorker(gitterChan, gitterAddr)
 	}
 
 	start()
@@ -204,6 +242,7 @@ func getPageData(r *http.Request, title string, disableNavBar bool) pageData {
 		IsDarkMode:    isDarkMode,
 		DisableNavBar: disableNavBar,
 		Title:         title,
+		IndexerAlive:  gitterIsAlive(),
 	}
 }
 
