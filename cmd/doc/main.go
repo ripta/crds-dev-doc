@@ -208,8 +208,8 @@ func start() {
 	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./static/")))
 	r.HandleFunc("/", home)
 	r.PathPrefix("/static/").Handler(staticHandler)
-	r.HandleFunc("/github.com/{org}/{repo}@{tag}", org)
-	r.HandleFunc("/github.com/{org}/{repo}", org)
+	r.HandleFunc("/repo/github.com/{org}/{repo}@{tag}", org)
+	r.HandleFunc("/repo/github.com/{org}/{repo}", org)
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag}", raw)
 	r.HandleFunc("/raw/github.com/{org}/{repo}", raw)
 	r.PathPrefix("/").HandlerFunc(doc)
@@ -266,7 +266,7 @@ func raw(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Fprint(w, "Unable to render raw CRDs.")
-		log.Printf("failed to get raw CRDs for %s : %v", repo, err)
+		log.Printf("failed to get raw CRDs for %s (%s): %v", repo, fullRepo, err)
 	} else {
 		w.Write([]byte(total))
 		log.Printf("successfully rendered raw CRDs")
@@ -292,7 +292,7 @@ func org(w http.ResponseWriter, r *http.Request) {
 	defer br.Close()
 	c, err := br.Query()
 	if err != nil {
-		log.Printf("failed to get CRDs for %s : %v", repo, err)
+		log.Printf("failed to get CRDs for %s (%s): %v", repo, fullRepo, err)
 		if err := page.HTML(w, http.StatusOK, "new", baseData{Page: pageData}); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
@@ -370,7 +370,7 @@ func doc(w http.ResponseWriter, r *http.Request) {
 	var schema *apiextensions.CustomResourceValidation
 	crd := &apiextensions.CustomResourceDefinition{}
 	log.Printf("Request Received: %s\n", r.URL.Path)
-	org, repo, group, kind, version, tag, err := parseGHURL(r.URL.Path)
+	org, repo, group, kind, version, tag, err := parseGHURL(strings.TrimPrefix(r.URL.Path, "/repo"))
 	if err != nil {
 		log.Printf("failed to parse Github path %q: %v", r.URL.Path, err)
 		fmt.Fprint(w, "Invalid URL.")
@@ -386,7 +386,7 @@ func doc(w http.ResponseWriter, r *http.Request) {
 	}
 	foundTag := tag
 	if err := c.Scan(&foundTag, crd); err != nil {
-		log.Printf("failed to get CRDs for %s : %v", repo, err)
+		log.Printf("failed to get CRDs for %s (%s): %v", repo, fullRepo, err)
 		if err := page.HTML(w, http.StatusOK, "doc", baseData{Page: pageData}); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
