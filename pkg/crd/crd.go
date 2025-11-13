@@ -54,7 +54,7 @@ func NewCRDer(data []byte, m ...Modifier) (*CRDer, error) {
 	internal := &apiextensions.CustomResourceDefinition{}
 	if errV1Beta1 := convertV1Beta1ToInternal(data, internal, m...); errV1Beta1 != nil {
 		if errV1 := convertV1ToInternal(data, internal, m...); errV1 != nil {
-			return nil, fmt.Errorf("conversion unsuccessful: %s, %s", errV1Beta1, errV1)
+			return nil, fmt.Errorf("conversion unsuccessful: v1beta1ToInternal:%w, v1ToInternal:%w", errV1Beta1, errV1)
 		}
 	}
 
@@ -104,40 +104,42 @@ func (c *CRDer) Validate(data []byte) error {
 func convertV1ToInternal(data []byte, internal *apiextensions.CustomResourceDefinition, mods ...Modifier) error {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 	if err := yaml.Unmarshal(data, crd); err != nil {
-		return err
+		return fmt.Errorf("v1 unmarshal error: %w", err)
 	}
+
 	apiextensionsv1.SetDefaults_CustomResourceDefinition(crd)
 	if err := apiextensionsv1.Convert_v1_CustomResourceDefinition_To_apiextensions_CustomResourceDefinition(crd, internal, nil); err != nil {
-		return err
+		return fmt.Errorf("v1 conversion error: %w", err)
 	}
+
 	for _, m := range mods {
 		m(internal)
 	}
-	errList := validation.ValidateCustomResourceDefinition(context.Background(), internal)
-	if len(errList) > 0 {
-		return errors.New(errList.ToAggregate().Error())
-	}
 
+	if err := validation.ValidateCustomResourceDefinition(context.Background(), internal).ToAggregate(); err != nil {
+		return fmt.Errorf("v1 validation error: %w", err)
+	}
 	return nil
 }
 
 func convertV1Beta1ToInternal(data []byte, internal *apiextensions.CustomResourceDefinition, mods ...Modifier) error {
 	crd := &v1beta1.CustomResourceDefinition{}
 	if err := yaml.Unmarshal(data, crd); err != nil {
-		return err
+		return fmt.Errorf("v1beta1 unmarshal error: %w", err)
 	}
+
 	v1beta1.SetObjectDefaults_CustomResourceDefinition(crd)
 	if err := v1beta1.Convert_v1beta1_CustomResourceDefinition_To_apiextensions_CustomResourceDefinition(crd, internal, nil); err != nil {
-		return err
+		return fmt.Errorf("v1beta1 conversion error: %w", err)
 	}
+
 	for _, m := range mods {
 		m(internal)
 	}
-	errList := validation.ValidateCustomResourceDefinition(context.Background(), internal)
-	if len(errList) > 0 {
-		return errors.New(errList.ToAggregate().Error())
-	}
 
+	if err := validation.ValidateCustomResourceDefinition(context.Background(), internal).ToAggregate(); err != nil {
+		return fmt.Errorf("v1beta1 validation error: %w", err)
+	}
 	return nil
 }
 
