@@ -298,11 +298,14 @@ func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree
 				fmt.Printf("Skipping CRD YAML file %s@%s: error parsing: %v", file, hash.String(), err)
 				continue
 			}
+
 			cbytes, err := json.Marshal(crder.CRD)
 			if err != nil {
 				fmt.Printf("Skipping CRD YAML file %s@%s: error marshaling: %v", file, hash.String(), err)
 				continue
 			}
+
+			fmt.Printf("Processed CRD %s from file %s@%s\n", crd.PrettyGVK(crder.GVK), file, hash.String())
 			repoCRDs[crd.PrettyGVK(crder.GVK)] = models.RepoCRD{
 				Path:     crd.PrettyGVK(crder.GVK),
 				Filename: path.Base(file),
