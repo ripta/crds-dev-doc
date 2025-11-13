@@ -124,6 +124,35 @@ type listGVKData struct {
 	Repotags map[string][]string
 }
 
+type listGroupVersionData struct {
+	Page    pageData
+	Group   string
+	Version string
+
+	Total int
+	Kinds map[string]int
+}
+
+type listGroupsData struct {
+	Page  pageData
+	Group string
+
+	Total    int
+	Versions map[string]int
+}
+
+type listAllGroupsData struct {
+	Page pageData
+
+	Total  int
+	Groups map[string]listAllGroupStats
+}
+
+type listAllGroupStats struct {
+	VersionCount int
+	KindCount    int
+}
+
 type orgData struct {
 	Page  pageData
 	Repo  string
@@ -258,6 +287,9 @@ func start() {
 	r.HandleFunc("/", home)
 	r.PathPrefix("/static/").Handler(staticHandler)
 	r.HandleFunc("/gvk/{group}/{version}/{kind}", listGVK)
+	r.HandleFunc("/gvk/{group}/{version}", listGroupVersion)
+	r.HandleFunc("/gvk/{group}", listGroups)
+	r.HandleFunc("/gvk", listAllGroups)
 	r.HandleFunc("/repo/github.com/{org}/{repo}@{tag:.+}", org)
 	r.HandleFunc("/repo/github.com/{org}/{repo}", org)
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag:.+}", raw)
@@ -315,6 +347,121 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("successfully rendered list GVK template for %s/%s/%s", group, version, kind)
+}
+
+func listGroupVersion(w http.ResponseWriter, r *http.Request) {
+	parameters := mux.Vars(r)
+	group := parameters["group"]
+	version := parameters["version"]
+
+	rows, err := db.Query(context.Background(), "SELECT c.kind, COUNT(1) FROM crds c WHERE c.group=$1 AND c.version=$2 GROUP BY c.kind;", group, version)
+	if err != nil {
+		log.Printf("failed to get repos for %s/%s: %v", group, version, err)
+		fmt.Fprint(w, "Unable to get repositories for supplied group-version.")
+		return
+	}
+
+	data := listGroupVersionData{
+		Page:    getPageData(r, fmt.Sprintf("%s/%s", group, version), false),
+		Group:   group,
+		Version: version,
+		Kinds:   map[string]int{},
+	}
+
+	for rows.Next() {
+		var kind string
+		var count int
+		if err := rows.Scan(&kind, &count); err != nil {
+			log.Printf("failed to scan repo row for %s/%s: %v", group, version, err)
+			fmt.Fprint(w, "Unable to get repositories for supplied group-version.")
+			return
+		}
+
+		data.Kinds[kind] = count
+		data.Total++
+	}
+
+	if err := page.HTML(w, http.StatusOK, "list_group_version", data); err != nil {
+		log.Printf("listGroupVersionTemplate.Execute(): %v", err)
+		fmt.Fprint(w, "Unable to render list group-version template.")
+		return
+	}
+	log.Printf("successfully rendered list group-version template for %s/%s", group, version)
+}
+
+func listGroups(w http.ResponseWriter, r *http.Request) {
+	parameters := mux.Vars(r)
+	group := parameters["group"]
+
+	rows, err := db.Query(context.Background(), "SELECT c.version, COUNT(DISTINCT c.kind) FROM crds c WHERE c.group=$1 GROUP BY c.version;", group)
+	if err != nil {
+		log.Printf("failed to get versions for %s: %v", group, err)
+		fmt.Fprint(w, "Unable to get versions for supplied group.")
+		return
+	}
+
+	data := listGroupsData{
+		Page:     getPageData(r, group, false),
+		Group:    group,
+		Versions: map[string]int{},
+	}
+
+	for rows.Next() {
+		var version string
+		var count int
+		if err := rows.Scan(&version, &count); err != nil {
+			log.Printf("failed to scan version row for %s: %v", group, err)
+			fmt.Fprint(w, "Unable to get versions for supplied group.")
+			return
+		}
+
+		data.Versions[version] = count
+		data.Total++
+	}
+
+	if err := page.HTML(w, http.StatusOK, "list_groups", data); err != nil {
+		log.Printf("listGroupsTemplate.Execute(): %v", err)
+		fmt.Fprint(w, "Unable to render list groups template.")
+		return
+	}
+	log.Printf("successfully rendered list groups template for %s", group)
+}
+
+func listAllGroups(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(context.Background(), "SELECT c.group, COUNT(DISTINCT c.version), COUNT(DISTINCT c.kind) FROM crds c GROUP BY c.group ORDER BY c.group;")
+	if err != nil {
+		log.Printf("failed to get all groups: %v", err)
+		fmt.Fprint(w, "Unable to get all groups.")
+		return
+	}
+
+	data := listAllGroupsData{
+		Page:   getPageData(r, "All Groups", false),
+		Groups: map[string]listAllGroupStats{},
+	}
+
+	for rows.Next() {
+		var group string
+		var versionCount, kindCount int
+		if err := rows.Scan(&group, &versionCount, &kindCount); err != nil {
+			log.Printf("failed to scan all groups row: %v", err)
+			fmt.Fprint(w, "Unable to get all groups.")
+			return
+		}
+
+		data.Groups[group] = listAllGroupStats{
+			VersionCount: versionCount,
+			KindCount:    kindCount,
+		}
+		data.Total++
+	}
+
+	if err := page.HTML(w, http.StatusOK, "list_all_groups", data); err != nil {
+		log.Printf("listAllGroupsTemplate.Execute(): %v", err)
+		fmt.Fprint(w, "Unable to render list all groups template.")
+		return
+	}
+	log.Printf("successfully rendered list all groups template")
 }
 
 func raw(w http.ResponseWriter, r *http.Request) {

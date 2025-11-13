@@ -1,0 +1,101 @@
+<div class="content-wrapper">
+    <div class="container">
+        <div class="content">
+            <h1><a href="/gvk/{{ .Group }}/{{ .Version }}">{{ .Group }}/{{ .Version }}</a></h1>
+        </div>
+        <p>Found <b>{{ .Total }} kinds</b> in {{ .Group }}/{{ .Version }}</p>
+        <div id="kinds"></div>
+    </div>
+</div>
+
+{{ template "_scripts" . }}
+<script src="https://unpkg.com/react-table@7/dist/react-table.production.min.js"></script>
+<script type="module">
+    import { formatRelative } from 'https://cdn.jsdelivr.net/npm/date-fns/+esm';
+
+    const { render } = ReactDOM;
+    const { html } = htmReact;
+    const { useTable, useSortBy, useGlobalFilter  } = ReactTable;
+
+    const { Group, Version, Kinds, } = {{ . }};
+    const data = Object.keys(Kinds).map(key => {
+        return { Kind: key, Count: Kinds[key] };
+    });
+
+    const columns = [
+        {
+            Header: 'Kind',
+            accessor: 'Kind',
+            Cell: ({ row: { original }, value }) => html`<a href=${`/gvk/${Group}/${Version}/${original.Kind}`}>${value}</a>`,
+        },
+        {
+            Header: 'Number of Repotags Available in',
+            accessor: 'Count'
+        }
+    ];
+
+    function CRDHeader(column) {
+        return html`<th ...${column.getHeaderProps(column.getSortByToggleProps())}>
+        ${column.render('Header')}
+            <span class="sort-header ${column.isSorted ? 'sort-header-active' : ''}">
+            ${(column.isSorted
+            ? column.isSortedDesc
+                ? html`<i class="fas fa-sort-down"></i>`
+                : html`<i class="fas fa-sort-up"></i>`
+            : html`<i class="fas fa-sort"></i>`)}
+            </span>
+        </th>`
+    }
+
+    function KindsTable() {
+        const table = useTable({ columns, data }, useSortBy, useGlobalFilter);
+        const {
+            getTableProps,
+            getTableBodyProps,
+            headerGroups,
+            rows,
+            prepareRow,
+            setGlobalFilter,
+            state: { globalFilter }
+        } = table;
+
+        return html`
+        <form class="form-inline w-md-400 w-sm-full mb-md-10 mb-5" onSubmit=${e => e.preventDefault}>
+            <input type="search" class="form-control" placeholder="e.g. CacheCluster, acm.aws" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-striped table-outer-bordered" ...${getTableProps()}>
+                <thead>
+                    ${headerGroups.map(group => html`
+                    <tr ...${group.getHeaderGroupProps()}>
+                        ${group.headers.map(CRDHeader)}
+                    </tr>
+                    `)}
+                </thead>
+                <tbody ...${getTableBodyProps()}>
+                    ${rows.map(row => {
+            prepareRow(row)
+            return html`
+                        <tr ...${row.getRowProps()}>
+                            ${row.cells.map(cell => html`
+                            <td ...${cell.getCellProps()}>${cell.render('Cell')}</td>
+                            `)}
+                        </tr>
+                        `
+        })}
+                </tbody>
+            </table>
+        </div>`;
+    }
+
+    render(html`<${KindsTable} />`, document.getElementById("kinds"));
+</script>
+<style>
+    #kinds .sort-header {
+        margin-left: 1rem;
+    }
+
+    #kinds .sort-header:not(.sort-header-active) {
+        opacity: 0.5;
+    }
+</style>
