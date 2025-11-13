@@ -59,6 +59,8 @@ const (
 	maxFileSize = 200 * 1024 // 200 KB
 	maxRuntime  = 1 * time.Minute
 	maxTagAge   = 4 * 365 * 24 * time.Hour // 4 years
+
+	dryRunEnv = "GITTER_DRY_RUN"
 )
 
 var (
@@ -85,6 +87,7 @@ func main() {
 		conn:    pool,
 		locks:   sync.Map{},
 		limiter: rate.NewLimiter(rate.Every(2*time.Minute), 5),
+		dryRun:  os.Getenv(dryRunEnv) == "true",
 	}
 	rpc.Register(gitter)
 	rpc.HandleHTTP()
@@ -109,6 +112,7 @@ type Gitter struct {
 	conn    *pgxpool.Pool
 	locks   sync.Map
 	limiter *rate.Limiter
+	dryRun  bool
 }
 
 type tag struct {
@@ -146,7 +150,11 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	}
 	defer os.RemoveAll(dir)
 
-	log.Printf("Indexing repo %s/%s@%s into %s\n", gRepo.Org, gRepo.Repo, gRepo.Tag, dir)
+	if g.dryRun {
+		log.Printf("[DRYRUN] Indexing repo %s/%s@%s into %s\n", gRepo.Org, gRepo.Repo, gRepo.Tag, dir)
+	} else {
+		log.Printf("Indexing repo %s/%s@%s into %s\n", gRepo.Org, gRepo.Repo, gRepo.Tag, dir)
+	}
 	defer log.Printf("Finished indexing %s/%s\n", gRepo.Org, gRepo.Repo)
 
 	fullRepo := fmt.Sprintf("%s/%s/%s", "github.com", strings.ToLower(gRepo.Org), strings.ToLower(gRepo.Repo))
@@ -199,6 +207,7 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 		log.Printf("No tags found for repo %s/%s@%s\n", gRepo.Org, gRepo.Repo, gRepo.Tag)
 		return fmt.Errorf("repo %s/%s@%s: %w", gRepo.Org, gRepo.Repo, gRepo.Tag, ErrNoTagFound)
 	}
+	log.Printf("Found %d tags for repo %s/%s\n", len(tags), gRepo.Org, gRepo.Repo)
 
 	for _, t := range tags {
 		h, err := repo.ResolveRevision(plumbing.Revision(t.hash.String()))
@@ -221,9 +230,11 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 			if !errors.Is(err, pgx.ErrNoRows) {
 				return fmt.Errorf("error querying tags from database: %w", err)
 			}
-			r := g.conn.QueryRow(ctx, "INSERT INTO tags(name, repo, time) VALUES ($1, $2, $3) RETURNING id", t.name, fullRepo, c.Committer.When)
-			if err := r.Scan(&tagID); err != nil {
-				return fmt.Errorf("error inserting tag into database: %w", err)
+			if !g.dryRun {
+				r := g.conn.QueryRow(ctx, "INSERT INTO tags(name, repo, time) VALUES ($1, $2, $3) RETURNING id", t.name, fullRepo, c.Committer.When)
+				if err := r.Scan(&tagID); err != nil {
+					return fmt.Errorf("error inserting tag into database: %w", err)
+				}
 			}
 		}
 		repoCRDs, err := getCRDsFromTag(dir, t.name, h, w)
@@ -231,11 +242,16 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 			log.Printf("Unable to get CRDs: %s@%s (%v)", repo, t.name, err)
 			continue
 		}
-		if len(repoCRDs) > 0 {
-			allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
-			for _, crd := range repoCRDs {
-				allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
-			}
+		if len(repoCRDs) == 0 {
+			log.Printf("Skipping tag %s: no CRDs found", t.name)
+			continue
+		}
+
+		allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
+		for _, crd := range repoCRDs {
+			allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
+		}
+		if !g.dryRun {
 			if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
 				return fmt.Errorf("error inserting CRDs: %s@%s (%v)", repo, t.name, err)
 			}
@@ -245,35 +261,46 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	return nil
 }
 
+var (
+	reg     = regexp.MustCompile("kind: CustomResourceDefinition")
+	regPath = regexp.MustCompile(`^.*\.yaml`)
+)
+
 func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree) (map[string]models.RepoCRD, error) {
 	err := w.Checkout(&git.CheckoutOptions{
 		Hash:  *hash,
 		Force: true,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error during git checkout: %w", err)
 	}
 	if err := w.Reset(&git.ResetOptions{
 		Mode: git.HardReset,
 	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error during git reset: %w", err)
 	}
-	reg := regexp.MustCompile("kind: CustomResourceDefinition")
-	regPath := regexp.MustCompile(`^.*\.yaml`)
-	g, _ := w.Grep(&git.GrepOptions{
+
+	g, err := w.Grep(&git.GrepOptions{
 		Patterns:  []*regexp.Regexp{reg},
 		PathSpecs: []*regexp.Regexp{regPath},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("error grepping CRDs: %s@%s (%v)", tag, hash.String(), err)
+	}
+	fmt.Printf("Found %d CRD YAML files for tag %s\n", len(g), tag)
+
 	repoCRDs := map[string]models.RepoCRD{}
 	files := getYAMLs(g, dir)
 	for file, yamls := range files {
 		for _, y := range yamls {
 			crder, err := crd.NewCRDer(y, crd.StripLabels(), crd.StripAnnotations(), crd.StripConversion())
 			if err != nil || crder.CRD == nil {
+				fmt.Printf("Skipping CRD YAML file %s@%s: error parsing: %v", file, hash.String(), err)
 				continue
 			}
 			cbytes, err := json.Marshal(crder.CRD)
 			if err != nil {
+				fmt.Printf("Skipping CRD YAML file %s@%s: error marshaling: %v", file, hash.String(), err)
 				continue
 			}
 			repoCRDs[crd.PrettyGVK(crder.GVK)] = models.RepoCRD{
@@ -286,6 +313,7 @@ func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree
 			}
 		}
 	}
+
 	return repoCRDs, nil
 }
 
