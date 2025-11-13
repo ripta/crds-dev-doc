@@ -188,10 +188,18 @@ func StripLabels() Modifier {
 	}
 }
 
-// StripAnnotations removes annotations from a CRD's metadata
+// StripAnnotations removes annotations from a CRD's metadata, except for
+// the special api-approved annotation necessary in v1
 func StripAnnotations() Modifier {
 	return func(crd *apiextensions.CustomResourceDefinition) {
-		crd.SetAnnotations(map[string]string{})
+		oldAnnotations := crd.GetAnnotations()
+
+		newAnnotations := map[string]string{}
+		if v, ok := oldAnnotations[apiextensionsv1.KubeAPIApprovedAnnotation]; ok {
+			newAnnotations[apiextensionsv1.KubeAPIApprovedAnnotation] = v
+		}
+
+		crd.SetAnnotations(newAnnotations)
 	}
 }
 
