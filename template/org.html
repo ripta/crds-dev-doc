@@ -49,11 +49,13 @@
         },
         {
             Header: 'Group',
-            accessor: 'Group'
+            accessor: 'Group',
+            Cell: ({ row: { original }, value }) => html`<a href=${`/gvk/${original.Group}`}>${value}</a>`
         },
         {
             Header: 'Version',
-            accessor: 'Version'
+            accessor: 'Version',
+            Cell: ({ row: { original }, value }) => html`<a href=${`/gvk/${original.Group}/${original.Version}`}>${value}</a>`
         }
     ];
 
