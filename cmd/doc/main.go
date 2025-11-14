@@ -588,13 +588,10 @@ func org(w http.ResponseWriter, r *http.Request) {
 	tag := parameters["tag"]
 	pageData := getPageData(r, fmt.Sprintf("%s/%s", org, repo), false)
 	fullRepo := fmt.Sprintf("%s/%s/%s", "github.com", org, repo)
+
 	b := &pgx.Batch{}
-	if tag == "" {
-		b.Queue("SELECT t.name, c.group, c.version, c.kind FROM tags t INNER JOIN crds c ON (c.tag_id = t.id) WHERE LOWER(t.repo)=LOWER($1) AND t.id = (SELECT id FROM tags WHERE LOWER(repo) = LOWER($1) ORDER BY time DESC LIMIT 1);", fullRepo)
-	} else {
-		pageData.Title += fmt.Sprintf("@%s", tag)
-		b.Queue("SELECT t.name, c.group, c.version, c.kind FROM tags t INNER JOIN crds c ON (c.tag_id = t.id) WHERE LOWER(t.repo)=LOWER($1) AND t.name=$2;", fullRepo, tag)
-	}
+	pageData.Title += fmt.Sprintf("@%s", tag)
+	b.Queue("SELECT t.name, c.group, c.version, c.kind FROM tags t INNER JOIN crds c ON (c.tag_id = t.id) WHERE LOWER(t.repo)=LOWER($1) AND t.name=$2;", fullRepo, tag)
 	b.Queue("SELECT name, time FROM tags WHERE LOWER(repo)=LOWER($1) ORDER BY time DESC;", fullRepo)
 	br := db.SendBatch(context.Background(), b)
 	defer br.Close()
