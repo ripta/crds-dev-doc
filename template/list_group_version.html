@@ -61,7 +61,7 @@
 
         return html`
         <form class="form-inline w-md-400 w-sm-full mb-md-10 mb-5" onSubmit=${e => e.preventDefault}>
-            <input type="search" class="form-control" placeholder="e.g. CacheCluster, acm.aws" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
+            <input type="search" class="form-control" placeholder="Filter by any field value" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
         </form>
         <div class="table-responsive">
             <table class="table table-striped table-outer-bordered" ...${getTableProps()}>
