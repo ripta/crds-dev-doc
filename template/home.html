@@ -10,8 +10,9 @@
             <p class="text-center">doc.crds.dev is and always will be <a href="https://github.com/crdsdev/doc">free and open source</a>.</p>
             <p>
                 Only public repos on github.com are currently supported. Repositories must contain the CRD manifests in
-                YAML format (e.g., not JSON, not a helm chart template), have the line <code>kind: CustomResourceDefinition</code>,
-                and be named ending with <code>.yaml</code>.
+                YAML format (e.g., not JSON, not a helm chart template), have the kind <code>CustomResourceDefinition</code>,
+                be named ending with <code>.yaml</code>, and be able to pass the
+                <a href="https://pkg.go.dev/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation">Kubernetes CRD validator</a>.
             </p>
             <p>
                 To find a repo, search for <kbd>github.com/{org}/{repo}</kbd>. This takes you to the latest version indexed.<br>
@@ -34,6 +35,10 @@
             <p>
                 To list all versions within a group, search for <kbd>{group}</kbd>.<br>
                 <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com">monitoring.coreos.com</a>
+            </p>
+            <p>
+                You can also explore <a href="/recent">the most recently indexed repositories</a>,
+                or <a href="/gvk">an index of all indexed CRDs by group</a>.
             </p>
         </div>
     </div>

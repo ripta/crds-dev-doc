@@ -299,6 +299,7 @@ func start() {
 	r.HandleFunc("/gvk", listAllGroups)
 	r.HandleFunc("/repo/github.com/{org}/{repo}@{tag:.+}", org)
 	r.HandleFunc("/repo/github.com/{org}/{repo}", listTags)
+	r.HandleFunc("/recent", listRecentlyIndexedRepos)
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag:.+}", raw)
 	r.HandleFunc("/raw/github.com/{org}/{repo}", raw)
 	r.PathPrefix("/").HandlerFunc(doc)
@@ -606,6 +607,48 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("successfully rendered list tags template for %s/%s", org, repo)
+}
+
+type listRecentlyIndexedReposData struct {
+	Page     pageData
+	Repotags map[string][]tagInfo
+}
+
+func listRecentlyIndexedRepos(w http.ResponseWriter, r *http.Request) {
+	pageData := getPageData(r, "Recently Indexed Repositories", false)
+	rows, err := db.Query(r.Context(), "SELECT t.repo, t.name, t.time FROM tags t ORDER BY t.time DESC LIMIT 20;")
+	if err != nil {
+		log.Printf("failed to get recently indexed repos: %v", err)
+		http.Error(w, "Unable to get recently indexed repositories.", http.StatusInternalServerError)
+		return
+	}
+
+	repotags := map[string][]tagInfo{}
+	for rows.Next() {
+		var repo, tag string
+		var timestamp time.Time
+		if err := rows.Scan(&repo, &tag, &timestamp); err != nil {
+			log.Printf("listRecentlyIndexedRepos(): %v", err)
+			fmt.Fprint(w, "Unable to render recently indexed repositories.")
+			return
+		}
+
+		repotags[repo] = append(repotags[repo], tagInfo{
+			Name:      tag,
+			Timestamp: timestamp,
+		})
+	}
+
+	if err := page.HTML(w, http.StatusOK, "list_recently_indexed_repos", listRecentlyIndexedReposData{
+		Page:     pageData,
+		Repotags: repotags,
+	}); err != nil {
+		log.Printf("listRecentlyIndexedReposTemplate.Execute(): %v", err)
+		fmt.Fprint(w, "Unable to render recently indexed repositories template.")
+		return
+	}
+
+	log.Printf("successfully rendered recently indexed repositories template")
 }
 
 func org(w http.ResponseWriter, r *http.Request) {

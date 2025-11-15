@@ -1,0 +1,104 @@
+<div class="content-wrapper">
+    <div class="container">
+        <p>&nbsp;</p>
+        <div id="repotags"></div>
+    </div>
+</div>
+
+{{ template "_scripts" . }}
+<script src="https://unpkg.com/react-table@7/dist/react-table.production.min.js"></script>
+<script type="module">
+    import { formatRelative } from 'https://cdn.jsdelivr.net/npm/date-fns/+esm';
+
+    const { render } = ReactDOM;
+    const { html } = htmReact;
+    const { useTable, useSortBy, useGlobalFilter  } = ReactTable;
+
+    const { Group, Version, Kind, Repotags, } = {{ . }};
+    const data = Object.keys(Repotags).flatMap(repo => {
+        return Repotags[repo].map(tagInfo => {
+            return { Repo: repo, Tag: tagInfo.Name, Timestamp: tagInfo.Timestamp };
+        });
+    });
+
+    const columns = [
+        {
+            Header: 'Repo',
+            accessor: 'Repo',
+        },
+        {
+            Header: 'Tag',
+            accessor: 'Tag',
+            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/${original.Repo}@${original.Tag}`}>${value}</a>`,
+        },
+        {
+            Header: 'Timestamp',
+            accessor: 'Timestamp',
+        },
+    ];
+
+    function CRDHeader(column) {
+        return html`<th ...${column.getHeaderProps(column.getSortByToggleProps())}>
+        ${column.render('Header')}
+            <span class="sort-header ${column.isSorted ? 'sort-header-active' : ''}">
+            ${(column.isSorted
+            ? column.isSortedDesc
+                ? html`<i class="fas fa-sort-down"></i>`
+                : html`<i class="fas fa-sort-up"></i>`
+            : html`<i class="fas fa-sort"></i>`)}
+            </span>
+        </th>`
+    }
+
+    function RepotagsTable() {
+        const table = useTable({ columns, data }, useSortBy, useGlobalFilter);
+        const {
+            getTableProps,
+            getTableBodyProps,
+            headerGroups,
+            rows,
+            prepareRow,
+            setGlobalFilter,
+            state: { globalFilter }
+        } = table;
+
+        return html`
+        <form class="form-inline w-md-400 w-sm-full mb-md-10 mb-5" onSubmit=${e => e.preventDefault}>
+            <input type="search" class="form-control" placeholder="Filter by any field value" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-striped table-outer-bordered" ...${getTableProps()}>
+                <thead>
+                    ${headerGroups.map(group => html`
+                    <tr ...${group.getHeaderGroupProps()}>
+                        ${group.headers.map(CRDHeader)}
+                    </tr>
+                    `)}
+                </thead>
+                <tbody ...${getTableBodyProps()}>
+                    ${rows.map(row => {
+            prepareRow(row)
+            return html`
+                        <tr ...${row.getRowProps()}>
+                            ${row.cells.map(cell => html`
+                            <td ...${cell.getCellProps()}>${cell.render('Cell')}</td>
+                            `)}
+                        </tr>
+                        `
+        })}
+                </tbody>
+            </table>
+        </div>`;
+    }
+
+    render(html`<${RepotagsTable} />`, document.getElementById("repotags"));
+</script>
+<style>
+    #repotags .sort-header {
+        margin-left: 1rem;
+    }
+
+    #repotags .sort-header:not(.sort-header-active) {
+        opacity: 0.5;
+    }
+</style>
