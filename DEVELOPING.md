@@ -52,3 +52,11 @@ docker run -d \
 ```
 psql -h 127.0.0.1 -U postgres -d postgres -a -f schema/crds_up.sql
 ```
+
+## Testing
+
+Run tests:
+
+```
+go test ./...
+```
