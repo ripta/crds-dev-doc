@@ -1,0 +1,15 @@
+<ul class="navbar-nav d-none d-md-flex">
+    <li class="breadcrumb-item breadcrumb-root">&nbsp;</li>
+    <li class="breadcrumb-item">
+        <a href="/gvk">All Indexed CRD Groups</a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="/gvk/{{ .Group }}">{{ .Group }}</a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="/gvk/{{ .Group }}/{{ .Version }}">{{ .Version }}</a>
+    </li>
+    <li class="breadcrumb-item" aria-current="page">
+        <a href="/gvk/{{ .Group }}/{{ .Version }}/{{ .Kind }}">{{ .Kind }}</a>
+    </li>
+</ul>
