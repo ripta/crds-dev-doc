@@ -51,10 +51,25 @@ type CRDer struct {
 
 // NewCRDer returns a new CRDer type.
 func NewCRDer(data []byte, m ...Modifier) (*CRDer, error) {
+	meta := metav1.TypeMeta{}
+	if err := yaml.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("could not unmarshal crd type metadata: %w", err)
+	}
+
 	internal := &apiextensions.CustomResourceDefinition{}
-	if errV1Beta1 := convertV1Beta1ToInternal(data, internal, m...); errV1Beta1 != nil {
+	if meta.APIVersion == apiextensionsv1.SchemeGroupVersion.String() {
+		if err := convertV1ToInternal(data, internal, m...); err != nil {
+			return nil, fmt.Errorf("v1 conversion unsuccessful: %w", err)
+		}
+	} else if meta.APIVersion == v1beta1.SchemeGroupVersion.String() {
+		if err := convertV1Beta1ToInternal(data, internal, m...); err != nil {
+			return nil, fmt.Errorf("v1beta1 conversion unsuccessful: %w", err)
+		}
+	} else {
 		if errV1 := convertV1ToInternal(data, internal, m...); errV1 != nil {
-			return nil, fmt.Errorf("conversion unsuccessful: v1beta1ToInternal:%w, v1ToInternal:%w", errV1Beta1, errV1)
+			if errV1Beta1 := convertV1Beta1ToInternal(data, internal, m...); errV1Beta1 != nil {
+				return nil, fmt.Errorf("fallback conversion unsuccessful: v1beta1ToInternal:%w, v1ToInternal:%w", errV1Beta1, errV1)
+			}
 		}
 	}
 
