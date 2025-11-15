@@ -131,45 +131,67 @@ func (g *Gitter) Ping(_ struct{}, reply *string) error {
 }
 
 // Index indexes a git repo at the specified url.
+//
+// This method performs fast validation checks synchronously and returns immediately
+// with any validation errors. If validation passes, indexing proceeds asynchronously
+// in the background. Subsequent calls to Index for the same repo/tag while indexing
+// is in progress will return an error.
 func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	key := fmt.Sprintf("%s/%s@%s", gRepo.Org, gRepo.Repo, gRepo.Tag)
 	if _, ok := g.locks.LoadOrStore(key, 1); ok {
-		return fmt.Errorf("%w: %s", ErrIndexingInProgress, key)
+		*reply = "indexing already in progress"
+		return nil
 	}
-	defer g.locks.Delete(key)
 
 	if rsv := g.limiter.Reserve(); !rsv.OK() {
-		return fmt.Errorf("%w: burst exceeded", ErrRateLimitExceeded)
+		g.locks.Delete(key)
+		*reply = "no indexing capacity: burst exceeded"
+		return nil
 	} else if delay := rsv.Delay(); delay > 0 {
 		rsv.Cancel()
-		return fmt.Errorf("%w: please wait %s", ErrRateLimitExceeded, delay)
+		g.locks.Delete(key)
+		*reply = "low indexing capacity: try again in a few minutes"
+		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), maxRuntime)
-	defer cancel()
-
+	ctx := context.Background()
 	fullRepo := gRepo.FullName()
 
 	// Check for recent failures
 	var recentFailureTime time.Time
-	checkErr := g.conn.QueryRow(ctx, "SELECT time FROM attempts WHERE repo = $1 AND tag = $2 AND time > $3 LIMIT 1", fullRepo, gRepo.Tag, time.Now().Add(-minRetryInterval)).Scan(&recentFailureTime)
+	var attemptErrorReason string
+	checkErr := g.conn.QueryRow(ctx, "SELECT time, error FROM attempts WHERE repo = $1 AND tag = $2 AND time > $3 LIMIT 1", fullRepo, gRepo.Tag, time.Now().Add(-minRetryInterval)).Scan(&recentFailureTime, &attemptErrorReason)
 	if checkErr == nil {
-		return fmt.Errorf("%w: last failed at %s", ErrRecentFailure, recentFailureTime.Format(time.RFC3339))
+		g.locks.Delete(key)
+		*reply = fmt.Sprintf("indexing failed: %s", attemptErrorReason)
+		return nil
 	} else if !errors.Is(checkErr, pgx.ErrNoRows) {
-		return fmt.Errorf("error querying recent failures: %w", checkErr)
+		g.locks.Delete(key)
+		*reply = "internal error"
+		return nil
 	}
 
-	if err := g.doIndex(ctx, gRepo, fullRepo); err != nil {
-		if !g.dryRun {
-			truncStr := truncateError(err.Error())
-			if _, dbErr := g.conn.Exec(context.Background(), "INSERT INTO attempts(repo, tag, time, error) VALUES ($1, $2, NOW(), $3) ON CONFLICT (repo, tag) DO UPDATE SET time = EXCLUDED.time, error = EXCLUDED.error", fullRepo, gRepo.Tag, truncStr); dbErr != nil {
-				log.Printf("Failed to record indexing attempt: %v", dbErr)
+	// All validation passed - spawn async indexing and return immediately
+	go func() {
+		defer g.locks.Delete(key)
+
+		ctx, cancel := context.WithTimeout(context.Background(), maxRuntime)
+		defer cancel()
+
+		if err := g.doIndex(ctx, gRepo, fullRepo); err != nil {
+			if !g.dryRun {
+				truncStr := truncateError(err.Error())
+				if _, dbErr := g.conn.Exec(context.Background(), "INSERT INTO attempts(repo, tag, time, error) VALUES ($1, $2, NOW(), $3) ON CONFLICT (repo, tag) DO UPDATE SET time = EXCLUDED.time, error = EXCLUDED.error", fullRepo, gRepo.Tag, truncStr); dbErr != nil {
+					log.Printf("Failed to record indexing attempt: %v", dbErr)
+				}
 			}
+			log.Printf("Indexing failed for %s: %v", key, err)
+		} else {
+			log.Printf("Successfully completed indexing for %s", key)
 		}
+	}()
 
-		return err
-	}
-
+	*reply = "indexing started; check back in a few minutes"
 	return nil
 }
 
