@@ -62,9 +62,8 @@ var (
 
 	cookieDarkMode = "halfmoon_preferredMode"
 
-	address string
-
-	gitterChan        chan models.GitterRepo
+	gitterAddr        string
+	gitterSemaphore   chan struct{}
 	gitterPingTime    atomic.Int64
 	gitterLastHealthy atomic.Bool
 )
@@ -100,7 +99,9 @@ type pageData struct {
 }
 
 type baseData struct {
-	Page pageData
+	Page          pageData
+	IndexingReply string
+	IndexingError string
 }
 
 type docData struct {
@@ -218,34 +219,60 @@ func gitterIsAlive() bool {
 	return lastPing > 0 && time.Now().Unix()-lastPing <= 120
 }
 
-func gitterWorker(gitterChan <-chan models.GitterRepo, gitterAddr string) {
-	for job := range gitterChan {
-		client, err := rpc.DialHTTP("tcp", gitterAddr)
-		if err != nil {
-			log.Print("dialing:", err)
-			continue
-		}
-
-		reply := ""
-		if err := client.Call("Gitter.Index", job, &reply); err != nil {
-			log.Printf("Gitter could not index %s/%s@%s: %v", job.Org, job.Repo, job.Tag, err)
-		} else {
-			log.Printf("Gitter indexed %s/%s@%s without error", job.Org, job.Repo, job.Tag)
-		}
-	}
-}
-
-func tryIndex(repo models.GitterRepo, gitterChan chan models.GitterRepo) bool {
+// callGitterIndex makes a synchronous RPC call to Gitter.Index with timeout and semaphore limiting.
+// It returns the reply message and any error that occurred.
+func callGitterIndex(ctx context.Context, repo models.GitterRepo, gitterAddr string) (string, error) {
+	// Try to acquire semaphore slot (non-blocking)
 	select {
-	case gitterChan <- repo:
-		return true
+	case gitterSemaphore <- struct{}{}:
+		defer func() { <-gitterSemaphore }() // Release on return
 	default:
-		return false
+		return "", fmt.Errorf("indexing queue is full; try again in a few minutes")
 	}
-}
 
-func init() {
-	gitterChan = make(chan models.GitterRepo, 4)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	dialDone := make(chan struct{})
+	var client *rpc.Client
+	var dialErr error
+	go func() {
+		client, dialErr = rpc.DialHTTP("tcp", gitterAddr)
+		close(dialDone)
+	}()
+
+	select {
+	case <-dialDone:
+		if dialErr != nil {
+			log.Printf("dialing gitter failed: %v", dialErr)
+			return "", fmt.Errorf("unable to connect to indexing service")
+		}
+	case <-ctx.Done():
+		return "", fmt.Errorf("timeout connecting to indexing service")
+	}
+	defer client.Close()
+
+	// Make RPC call with timeout
+	callDone := make(chan struct{})
+	var callErr error
+	var callReply string
+	go func() {
+		callErr = client.Call("Gitter.Index", repo, &callReply)
+		close(callDone)
+	}()
+
+	select {
+	case <-callDone:
+		if callErr != nil {
+			log.Printf("Gitter.Index error for %s/%s@%s: (reply=%s) %v", repo.Org, repo.Repo, repo.Tag, callReply, callErr)
+			return callReply, callErr
+		}
+
+		log.Printf("Gitter.Index succeeded for %s/%s@%s: %s", repo.Org, repo.Repo, repo.Tag, callReply)
+		return callReply, nil
+	case <-ctx.Done():
+		return "", fmt.Errorf("timeout waiting for indexing service response")
+	}
 }
 
 func main() {
@@ -264,17 +291,17 @@ func main() {
 		panic(err)
 	}
 
-	gitterAddr := defaultGitterAddr
+	gitterAddr = defaultGitterAddr
 	if value, ok := os.LookupEnv(gitterAddrEnv); ok && value != "" {
 		gitterAddr = value
 	}
 
 	log.Println("Gitter address:", gitterAddr)
 
+	// Initialize semaphore for limiting concurrent RPC calls
+	gitterSemaphore = make(chan struct{}, 4)
+
 	go gitterPinger(gitterAddr)
-	for i := 0; i < 4; i++ {
-		go gitterWorker(gitterChan, gitterAddr)
-	}
 
 	start()
 }
@@ -594,12 +621,19 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(tags) == 0 {
-		tryIndex(models.GitterRepo{
+		data := baseData{Page: pageData}
+		reply, err := callGitterIndex(r.Context(), models.GitterRepo{
 			Org:  org,
 			Repo: repo,
 			Tag:  "", // all tags
-		}, gitterChan)
-		if err := page.HTML(w, http.StatusOK, "new", baseData{Page: pageData}); err != nil {
+		}, gitterAddr)
+		if err != nil {
+			data.IndexingError = err.Error()
+		}
+		if reply != "" {
+			data.IndexingReply = reply
+		}
+		if err := page.HTML(w, http.StatusOK, "new", data); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
 		}
@@ -731,12 +765,19 @@ func org(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if len(tags) == 0 || (!tagExists && tag != "") {
-		tryIndex(models.GitterRepo{
+		data := baseData{Page: pageData}
+		reply, err := callGitterIndex(r.Context(), models.GitterRepo{
 			Org:  org,
 			Repo: repo,
 			Tag:  tag,
-		}, gitterChan)
-		if err := page.HTML(w, http.StatusOK, "new", baseData{Page: pageData}); err != nil {
+		}, gitterAddr)
+		if err != nil {
+			data.IndexingError = err.Error()
+		}
+		if reply != "" {
+			data.IndexingReply = reply
+		}
+		if err := page.HTML(w, http.StatusOK, "new", data); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
 		}
