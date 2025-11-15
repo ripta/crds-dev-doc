@@ -152,9 +152,6 @@ func convertV1Beta1ToInternal(data []byte, internal *apiextensions.CustomResourc
 		m(internal)
 	}
 
-	if err := validation.ValidateCustomResourceDefinition(context.Background(), internal).ToAggregate(); err != nil {
-		return fmt.Errorf("v1beta1 validation error: %w", err)
-	}
 	return nil
 }
 
