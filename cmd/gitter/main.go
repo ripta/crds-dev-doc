@@ -143,17 +143,6 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 		return nil
 	}
 
-	if rsv := g.limiter.Reserve(); !rsv.OK() {
-		g.locks.Delete(key)
-		*reply = "no indexing capacity: burst exceeded"
-		return nil
-	} else if delay := rsv.Delay(); delay > 0 {
-		rsv.Cancel()
-		g.locks.Delete(key)
-		*reply = "low indexing capacity: try again in a few minutes"
-		return nil
-	}
-
 	ctx := context.Background()
 	fullRepo := gRepo.FullName()
 
@@ -168,6 +157,19 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	} else if !errors.Is(checkErr, pgx.ErrNoRows) {
 		g.locks.Delete(key)
 		*reply = "internal error"
+		return nil
+	}
+
+	if rsv := g.limiter.Reserve(); !rsv.OK() {
+		g.locks.Delete(key)
+		log.Printf("Burst limit exceeded, cannot index %s at this time", key)
+		*reply = "no indexing capacity: burst exceeded"
+		return nil
+	} else if delay := rsv.Delay(); delay > 0 {
+		rsv.Cancel()
+		g.locks.Delete(key)
+		log.Printf("Rate limit exceeded, need to wait %s before indexing %s", delay.String(), key)
+		*reply = "low indexing capacity: try again in a few minutes"
 		return nil
 	}
 
