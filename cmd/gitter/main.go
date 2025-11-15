@@ -430,7 +430,7 @@ func splitYAML(file []byte, filename string) ([][]byte, error) {
 	defer func() {
 		if err := recover(); err != nil {
 			yamls = make([][]byte, 0)
-			err = fmt.Errorf("panic while processing yaml file: %w", err)
+			err = fmt.Errorf("panic while processing yaml file: %v", err)
 		}
 	}()
 
