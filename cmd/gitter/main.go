@@ -424,6 +424,7 @@ func getYAMLs(greps []git.GrepResult, dir string) map[string][][]byte {
 
 func splitYAML(file []byte, filename string) ([][]byte, error) {
 	errCount := 0
+	docIndex := -1
 
 	var yamls [][]byte
 	defer func() {
@@ -450,9 +451,18 @@ func splitYAML(file []byte, filename string) ([][]byte, error) {
 			continue
 		}
 
+		docIndex++
+		if v, ok := node["kind"].(string); !ok {
+			log.Printf("skipping CRD YAML file %s, document index %d: missing kind field", filename, docIndex)
+			continue
+		} else if v != "CustomResourceDefinition" {
+			log.Printf("skipping CRD YAML file %s, document index %d: kind is %s, expecting CustomResourceDefinition", filename, docIndex, v)
+			continue
+		}
+
 		doc, err := yaml.Marshal(node)
 		if err != nil {
-			log.Printf("error #%d: failed to encode part of CRD file: %s\n%s", errCount, filename, err)
+			log.Printf("error #%d: failed to reëncode CRD file %s, document index %d: %v", errCount, filename, docIndex, err)
 			errCount++
 			continue
 		}
