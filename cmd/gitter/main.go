@@ -152,7 +152,7 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 
 	// Check for recent failures
 	var recentFailureTime time.Time
-	checkErr := g.conn.QueryRow(ctx, "SELECT time FROM attempts WHERE repo = $1 AND tag = $2 AND time > NOW() - $3 LIMIT 1", fullRepo, gRepo.Tag, minRetryInterval).Scan(&recentFailureTime)
+	checkErr := g.conn.QueryRow(ctx, "SELECT time FROM attempts WHERE repo = $1 AND tag = $2 AND time > $3 LIMIT 1", fullRepo, gRepo.Tag, time.Now().Add(-minRetryInterval)).Scan(&recentFailureTime)
 	if checkErr == nil {
 		return fmt.Errorf("%w: last failed at %s", ErrRecentFailure, recentFailureTime.Format(time.RFC3339))
 	} else if !errors.Is(checkErr, pgx.ErrNoRows) {
