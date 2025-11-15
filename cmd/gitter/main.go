@@ -67,7 +67,7 @@ const (
 )
 
 var (
-	ErrNoTagFound         = errors.New("no tag found")
+	ErrNoTagFound         = errors.New("no tag found in repo")
 	ErrIndexingInProgress = errors.New("indexing already in progress")
 	ErrRateLimitExceeded  = errors.New("rate limit exceeded")
 	ErrRecentFailure      = errors.New("recent failure, retry later")
@@ -157,6 +157,19 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	} else if !errors.Is(checkErr, pgx.ErrNoRows) {
 		g.locks.Delete(key)
 		*reply = "internal error"
+		return nil
+	}
+
+	// Check for cumulative failures on the same repo, regardless of tag
+	var failureCount int
+	checkErr = g.conn.QueryRow(ctx, "SELECT COUNT(*) FROM attempts WHERE repo = $1 AND time > $2", fullRepo, time.Now().Add(-minRetryInterval)).Scan(&failureCount)
+	if checkErr != nil {
+		g.locks.Delete(key)
+		return fmt.Errorf("internal error checking failure count: %w", checkErr)
+	}
+	if failureCount >= 10 {
+		g.locks.Delete(key)
+		*reply = fmt.Sprintf("indexing %s has had too many failures, and has been blocked", fullRepo)
 		return nil
 	}
 
