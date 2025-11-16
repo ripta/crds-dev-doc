@@ -9,6 +9,7 @@ RUN go mod download
 
 COPY . .
 ENV CGO_ENABLED=0
+RUN go test ./...
 RUN go install -v ./cmd/...
 
 
