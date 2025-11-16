@@ -1,0 +1,10 @@
+# Copy this file to .envrc and modify the values as needed for your local
+# development environment. You can then either source the file manually or use
+# a tool like `direnv` to automatically load the environment variables when you
+# enter the project directory.
+
+# Database connection string for the development database.
+export CRDS_DEV_STORAGE_DSN=postgres://crds-dev-doc:CHANGEME@localhost/crds-dev-doc?sslmode=disable
+
+# Uncomment the line below to enable development mode, e.g., live reloading templates.
+# export IS_DEV=true
