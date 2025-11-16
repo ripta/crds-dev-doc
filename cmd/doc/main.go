@@ -67,6 +67,8 @@ var (
 	gitterSemaphore   chan struct{}
 	gitterPingTime    atomic.Int64
 	gitterLastHealthy atomic.Bool
+
+	defaultCacheDuration = 4 * time.Hour
 )
 
 // SchemaPlusParent is a JSON schema plus the name of the parent field.
@@ -345,6 +347,8 @@ func start() {
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
+	emitCacheControl(w, defaultCacheDuration)
+
 	data := homeData{Page: getPageData(r, "Doc", true)}
 	if err := page.HTML(w, http.StatusOK, "home", data); err != nil {
 		log.Printf("homeTemplate.Execute(): %v", err)
@@ -643,6 +647,8 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		if reply != "" {
 			data.IndexingReply = reply
 		}
+
+		emitCacheControl(w, 0)
 		if err := page.HTML(w, http.StatusOK, "new", data); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
@@ -730,6 +736,8 @@ func org(w http.ResponseWriter, r *http.Request) {
 	c, err := br.Query()
 	if err != nil {
 		log.Printf("failed to get CRDs for %s (%s): %v", repo, fullRepo, err)
+
+		emitCacheControl(w, 0)
 		if err := page.HTML(w, http.StatusOK, "new", baseData{Page: pageData}); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
@@ -755,6 +763,8 @@ func org(w http.ResponseWriter, r *http.Request) {
 	c, err = br.Query()
 	if err != nil {
 		log.Printf("failed to get tags for %s : %v", repo, err)
+
+		emitCacheControl(w, 0)
 		if err := page.HTML(w, http.StatusOK, "new", baseData{Page: pageData}); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
@@ -795,6 +805,8 @@ func org(w http.ResponseWriter, r *http.Request) {
 		if reply != "" {
 			data.IndexingReply = reply
 		}
+
+		emitCacheControl(w, 0)
 		if err := page.HTML(w, http.StatusOK, "new", data); err != nil {
 			log.Printf("newTemplate.Execute(): %v", err)
 			fmt.Fprint(w, "Unable to render new template.")
@@ -922,4 +934,14 @@ func parseGHURL(uPath string) (org, repo, group, version, kind, tag string, err 
 	}
 
 	return elements[1], elements[2], elements[3], elements[4], strings.Split(elements[5], "@")[0], tag, nil
+}
+
+func emitCacheControl(w http.ResponseWriter, duration time.Duration) {
+	if duration <= 0 {
+		w.Header().Set("Cache-Control", "private, no-cache")
+		return
+	}
+
+	value := fmt.Sprintf("public, max-age=%d, must-revalidate", int64(duration.Seconds()))
+	w.Header().Set("Cache-Control", value)
 }
