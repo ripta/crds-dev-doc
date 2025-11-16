@@ -1,62 +1,77 @@
-# Developing
+# Local Development Setup
 
-## Using Postgres Docker Image
+## Prerequisites
 
-The easiest way to get started developing locally is with the official [Postgres
-Docker image](https://hub.docker.com/_/postgres).
+- Go 1.24 or later
+- PostgreSQL 12 or later
+- Docker (optional, for running PostgreSQL)
 
-1. Start docker container in background:
+## Quick Start
 
-```
+1. Start PostgreSQL (using Docker):
+
+```bash
 docker run -d --rm \
-   --name dev-postgres \
-   -e POSTGRES_PASSWORD=password \
-   -p 5432:5432 postgres
+  --name dev-postgres \
+  -e POSTGRES_PASSWORD=password \
+  -p 5432:5432 postgres
 ```
 
-2. Setup doc database and tables:
+2. Initialize the database schema:
 
-```
+```bash
 psql -h 127.0.0.1 -U postgres -d postgres -a -f schema/crds_up.sql
 ```
 
-## Using CloudSQL Proxy
+3. Set environment variables:
 
-If using [CloudSQL](https://cloud.google.com/sql) for a hosted Postgres
-solution, the following steps can be used to develop locally against your
-database.
+```bash
+export PG_USER=postgres
+export PG_PASS=password
+export PG_HOST=127.0.0.1
+export PG_PORT=5432
+export PG_DB=postgres
 
-> These steps are a summary of the
-> [guide](https://cloud.google.com/sql/docs/postgres/connect-admin-proxy#docker-proxy-image)
-> in the GCP CloudSQL documentation.
+# Optional: Set custom listen addresses
+export DOC_LISTEN_ADDR=:5001      # Web server (default)
+export GITTER_LISTEN_ADDR=:5002   # Indexer (default)
 
-1. Create a `ServiceAccount` for your GCP project with the following
-   permissions:
-    - `Cloud SQL Admin`
-    - `Cloud SQL Editor`
-    - `Cloud SQL Client`
-2. Click `Furnish a new private key` with type `JSON` and put it at path
-   `deploy/cloudsql.json`.
-3. Run the CloudSQL proxy in a docker container from this repository's root:
-
-```
-docker run -d \
-  -v `pwd`/deploy:/config \
-  -p 127.0.0.1:5432:5432 \
-  gcr.io/cloudsql-docker/gce-proxy:1.19.1 /cloud_sql_proxy \
-  -instances=crossplane-dogfood:us-central1:test-123=tcp:0.0.0.0:5432 -credential_file=/config/cloudsql.json
+# Optional: Enable development mode for template hot-reloading
+export IS_DEV=true
 ```
 
-4. Setup doc database and tables:
+4. Run the doc server (in one terminal):
 
+```bash
+make run-doc
+# or: go run -v ./cmd/doc
 ```
-psql -h 127.0.0.1 -U postgres -d postgres -a -f schema/crds_up.sql
+
+5. Run the gitter indexer (in another terminal):
+
+```bash
+make run-gitter
+# or: go run -v ./cmd/gitter
 ```
 
-## Testing
+6. Open http://localhost:5001 in your browser.
 
-Run tests:
+## Environment Variables
 
-```
-go test ./...
+### Database Configuration
+
+- `CRDS_DEV_STORAGE_DSN` - Full PostgreSQL connection string (overrides individual PG_* vars)
+
+### Service Configuration
+
+- `DOC_LISTEN_ADDR` - Doc server listen address (default: `:5001`)
+- `GITTER_LISTEN_ADDR` - Gitter RPC server listen address (default: `:5002`)
+- `GITTER_ADDR` - Gitter RPC server address for doc to connect to (default: `127.0.0.1:5002`)
+- `IS_DEV` - Set to `"true"` to enable development mode with template hot-reloading (default: empty)
+- `GITTER_DRY_RUN` - Set to `"true"` to run gitter in dry-run mode without writing to database (default: empty)
+
+## Running Tests
+
+```bash
+make test
 ```
