@@ -36,7 +36,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-	flag "github.com/spf13/pflag"
 	"github.com/unrolled/render"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -302,7 +301,6 @@ func main() {
 		Level: logLevel,
 	}))
 
-	flag.Parse()
 	dsn := os.Getenv("CRDS_DEV_STORAGE_DSN")
 	if dsn == "" {
 		dsn = fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", os.Getenv(userEnv), os.Getenv(passwordEnv), os.Getenv(hostEnv), os.Getenv(portEnv), os.Getenv(dbEnv))
