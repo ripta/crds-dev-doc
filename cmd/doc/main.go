@@ -879,8 +879,6 @@ func doc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var schema *apiextensions.CustomResourceValidation
-	crd := &apiextensions.CustomResourceDefinition{}
 	org, repo, group, kind, version, tag, err := parseGHURL(rest)
 	if err != nil {
 		logger.Warn("failed to parse Github path", "path", r.URL.Path, "err", err)
@@ -904,7 +902,9 @@ func doc(w http.ResponseWriter, r *http.Request) {
 	} else {
 		c = db.QueryRow(r.Context(), "SELECT t.name, c.data::jsonb FROM tags t INNER JOIN crds c ON (c.tag_id = COALESCE(t.alias_tag_id, t.id)) WHERE LOWER(t.repo)=LOWER($1) AND t.name=$2 AND c.group=$3 AND c.version=$4 AND c.kind=$5;", fullRepo, tag, group, version, kind)
 	}
+
 	foundTag := tag
+	crd := &apiextensions.CustomResourceDefinition{}
 	if err := c.Scan(&foundTag, crd); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "CRD not found.", http.StatusNotFound)
@@ -918,7 +918,8 @@ func doc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	schema = crd.Spec.Validation
+
+	schema := crd.Spec.Validation
 	if len(crd.Spec.Versions) > 1 {
 		for _, version := range crd.Spec.Versions {
 			if version.Storage == true {
