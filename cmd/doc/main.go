@@ -67,7 +67,8 @@ var (
 	gitterPingTime    atomic.Int64
 	gitterLastHealthy atomic.Bool
 
-	defaultCacheDuration = 4 * time.Hour
+	longCacheDuration  = 4 * time.Hour
+	shortCacheDuration = 5 * time.Minute
 )
 
 var logger *slog.Logger
@@ -374,7 +375,7 @@ func start() {
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
-	emitCacheControl(w, defaultCacheDuration)
+	emitCacheControl(w, longCacheDuration)
 
 	data := homeData{Page: getPageData(r, "Doc", true)}
 	if err := page.HTML(w, http.StatusOK, "home", data); err != nil {
@@ -683,6 +684,7 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	emitCacheControl(w, shortCacheDuration)
 	if err := page.HTML(w, http.StatusOK, "list_tags", listTagsData{
 		Page:  pageData,
 		Repo:  strings.Join([]string{org, repo}, "/"),
@@ -726,6 +728,7 @@ func listRecentlyIndexedRepos(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	emitCacheControl(w, shortCacheDuration)
 	if err := page.HTML(w, http.StatusOK, "list_recently_indexed_repos", listRecentlyIndexedReposData{
 		Page:     pageData,
 		Repotags: repotags,
@@ -851,6 +854,8 @@ func org(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	emitCacheControl(w, longCacheDuration)
 	if err := page.HTML(w, http.StatusOK, "org", orgData{
 		Page:  pageData,
 		Repo:  strings.Join([]string{org, repo}, "/"),
@@ -932,6 +937,7 @@ func doc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	emitCacheControl(w, longCacheDuration)
 	if err := page.HTML(w, http.StatusOK, "doc", docData{
 		Page:        pageData,
 		Repo:        strings.Join([]string{org, repo}, "/"),
