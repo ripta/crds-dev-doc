@@ -873,9 +873,15 @@ func org(w http.ResponseWriter, r *http.Request) {
 }
 
 func doc(w http.ResponseWriter, r *http.Request) {
+	rest, ok := strings.CutPrefix(r.URL.Path, "/repo")
+	if !ok {
+		http.Error(w, "Invalid URL.", http.StatusNotFound)
+		return
+	}
+
 	var schema *apiextensions.CustomResourceValidation
 	crd := &apiextensions.CustomResourceDefinition{}
-	org, repo, group, kind, version, tag, err := parseGHURL(strings.TrimPrefix(r.URL.Path, "/repo"))
+	org, repo, group, kind, version, tag, err := parseGHURL(rest)
 	if err != nil {
 		logger.Warn("failed to parse Github path", "path", r.URL.Path, "err", err)
 		http.Error(w, "Repository not found.", http.StatusNotFound)
