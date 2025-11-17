@@ -24,7 +24,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/rpc"
-	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"

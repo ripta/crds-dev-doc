@@ -8,7 +8,6 @@ import (
 
 var ErrInvalidPath = errors.New("invalid path")
 
-// TODO(hasheddan): add testing and more reliable parse
 func parseGHURL(uPath string) (org, repo, group, version, kind, tag string, err error) {
 	u, err := url.Parse(uPath)
 	if err != nil {
