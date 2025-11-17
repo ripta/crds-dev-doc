@@ -13,15 +13,15 @@ func parseGHURL(uPath string) (org, repo, group, version, kind, tag string, err 
 	if err != nil {
 		return "", "", "", "", "", "", err
 	}
-	elements := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(elements) < 6 {
+	elements := strings.SplitN(strings.Trim(u.Path, "/"), "/", 6)
+	if len(elements) != 6 {
 		return "", "", "", "", "", "", ErrInvalidPath
 	}
 
-	tagSplit := strings.Split(u.Path, "@")
+	tagSplit := strings.Split(elements[5], "@")
 	if len(tagSplit) > 1 {
 		tag = tagSplit[1]
 	}
 
-	return elements[1], elements[2], elements[3], elements[4], strings.Split(elements[5], "@")[0], tag, nil
+	return elements[1], elements[2], elements[3], elements[4], tagSplit[0], tag, nil
 }

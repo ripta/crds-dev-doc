@@ -40,7 +40,7 @@ func TestParseGHURL(t *testing.T) {
 		},
 		{
 			name:        "path with dots in group",
-			uPath:       "/repo/kubernetes/kubernetes/networking.k8s.io/v1/Ingress",
+			uPath:       "/github.com/kubernetes/kubernetes/networking.k8s.io/v1/Ingress",
 			wantOrg:     "kubernetes",
 			wantRepo:    "kubernetes",
 			wantGroup:   "networking.k8s.io",
@@ -67,7 +67,7 @@ func TestParseGHURL(t *testing.T) {
 			wantRepo:    "repo",
 			wantGroup:   "group",
 			wantVersion: "version",
-			wantKind:    "kind",
+			wantKind:    "kind/extra/elements",
 			wantTag:     "",
 			wantErr:     nil,
 		},
@@ -107,7 +107,7 @@ func TestParseGHURL(t *testing.T) {
 		},
 		{
 			name:        "path with semantic version tag",
-			uPath:       "/repo/kubernetes/api/apps/v1/Deployment@v0.29.0",
+			uPath:       "/github.com/kubernetes/api/apps/v1/Deployment@v0.29.0",
 			wantOrg:     "kubernetes",
 			wantRepo:    "api",
 			wantGroup:   "apps",
@@ -184,6 +184,17 @@ func TestParseGHURL(t *testing.T) {
 			wantErr:     nil,
 		},
 		{
+			name:        "tag with slashes",
+			uPath:       "/prefix/org/repo/group/v1/Kind@feature/x/v1.0",
+			wantOrg:     "org",
+			wantRepo:    "repo",
+			wantGroup:   "group",
+			wantVersion: "v1",
+			wantKind:    "Kind",
+			wantTag:     "feature/x/v1.0",
+			wantErr:     nil,
+		},
+		{
 			name:        "@ in middle of path before kind",
 			uPath:       "/prefix/org@something/repo/group/v1/Kind",
 			wantOrg:     "org@something",
@@ -191,7 +202,7 @@ func TestParseGHURL(t *testing.T) {
 			wantGroup:   "group",
 			wantVersion: "v1",
 			wantKind:    "Kind",
-			wantTag:     "something/repo/group/v1/Kind",
+			wantTag:     "",
 			wantErr:     nil,
 		},
 		{
@@ -202,7 +213,7 @@ func TestParseGHURL(t *testing.T) {
 			wantGroup:   "group",
 			wantVersion: "v1",
 			wantKind:    "Kind",
-			wantTag:     "org/repo/group/v1/Kind",
+			wantTag:     "",
 			wantErr:     nil,
 		},
 		{
@@ -308,12 +319,12 @@ func TestParseGHURL(t *testing.T) {
 		},
 		{
 			name:        "multiple empty segments",
-			uPath:       "/prefix///org/repo/group/version/kind",
+			uPath:       "/prefix///group/version/kind",
 			wantOrg:     "",
 			wantRepo:    "",
-			wantGroup:   "org",
-			wantVersion: "repo",
-			wantKind:    "group",
+			wantGroup:   "group",
+			wantVersion: "version",
+			wantKind:    "kind",
 			wantTag:     "",
 			wantErr:     nil,
 		},
@@ -399,7 +410,7 @@ func TestParseGHURL(t *testing.T) {
 
 		{
 			name:        "kubernetes deployment",
-			uPath:       "/repo/kubernetes/kubernetes/apps/v1/Deployment@v1.29.0",
+			uPath:       "/github.com/kubernetes/kubernetes/apps/v1/Deployment@v1.29.0",
 			wantOrg:     "kubernetes",
 			wantRepo:    "kubernetes",
 			wantGroup:   "apps",
@@ -410,7 +421,7 @@ func TestParseGHURL(t *testing.T) {
 		},
 		{
 			name:        "cert-manager certificate",
-			uPath:       "/repo/cert-manager/cert-manager/cert-manager.io/v1/Certificate@v1.13.0",
+			uPath:       "/github.com/cert-manager/cert-manager/cert-manager.io/v1/Certificate@v1.13.0",
 			wantOrg:     "cert-manager",
 			wantRepo:    "cert-manager",
 			wantGroup:   "cert-manager.io",
@@ -421,7 +432,7 @@ func TestParseGHURL(t *testing.T) {
 		},
 		{
 			name:        "istio virtual service",
-			uPath:       "/repo/istio/istio/networking.istio.io/v1beta1/VirtualService@1.20.0",
+			uPath:       "/github.com/istio/istio/networking.istio.io/v1beta1/VirtualService@1.20.0",
 			wantOrg:     "istio",
 			wantRepo:    "istio",
 			wantGroup:   "networking.istio.io",
