@@ -697,7 +697,7 @@ type listRecentlyIndexedReposData struct {
 
 func listRecentlyIndexedRepos(w http.ResponseWriter, r *http.Request) {
 	pageData := getPageData(r, "Recently Indexed Repositories", false)
-	rows, err := db.Query(r.Context(), "SELECT t.repo, t.name, t.time FROM tags t ORDER BY t.time DESC LIMIT 20;")
+	rows, err := db.Query(r.Context(), "SELECT t.repo, t.name, t.time FROM tags t WHERE t.alias_tag_id IS NULL ORDER BY t.time DESC LIMIT 20;")
 	if err != nil {
 		logger.Error("failed to get recently indexed repos", "err", err)
 		http.Error(w, "Unable to get recently indexed repositories.", http.StatusInternalServerError)
