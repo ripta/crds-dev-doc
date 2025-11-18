@@ -57,7 +57,7 @@
         } = table;
 
         return html`
-        <form class="form-inline w-md-400 w-sm-full mb-md-10 mb-5" onSubmit=${e => e.preventDefault}>
+            <form class="form-inline specific-w-md-400 w-sm-100 mb-md-3 mb-2" onSubmit=${e => e.preventDefault}>
             <input type="search" class="form-control" placeholder="Filter by any field value" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
         </form>
         <div class="table-responsive">

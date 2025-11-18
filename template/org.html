@@ -8,7 +8,7 @@
                 Source: <a href="https://github.com/{{ .Repo }}"><span class="label label-primary">github.com/{{ .Repo }}</span></a>
             {{ end }}
         </p>
-        <select class="form-control w-md-400 w-sm-full mb-md-10 mb-5" onchange="handleSelect(this)">
+        <select class="form-control specific-w-md-400 w-sm-100 mb-md-3 mb-2" onchange="handleSelect(this)">
             {{ $actual := .Tag }}{{ $repo := .Repo }}{{ range $tag := .Tags }}
                 {{ if eq $tag.Name $actual }}
                 <option value="/repo/github.com/{{ $repo }}@{{ $tag.Name }}" selected="selected">{{ $tag.Name }} ({{ $tag.Timestamp }})</option>
@@ -83,7 +83,7 @@
         } = table;
 
         return html`
-        <form class="form-inline w-md-400 w-sm-full mb-md-10 mb-5" onSubmit=${e => e.preventDefault}>
+        <form class="form-inline specific-w-md-400 w-sm-100 mb-md-3 mb-2" onSubmit=${e => e.preventDefault}>
             <input type="search" class="form-control" placeholder="Filter by any field value" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
         </form>
         <div class="table-responsive">

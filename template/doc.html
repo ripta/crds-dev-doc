@@ -27,8 +27,8 @@
     const clipboard = new ClipboardJS('.copy-url');
     clipboard.on('success', e => {
         halfmoon.initStickyAlert({
-            content: "Copied Link!",
-            timeShown: 2000
+            content: `Copied link to &laquo;${e.trigger.parentElement.querySelector('span.key-content').textContent}&raquo;.`,
+            timeShown: 2500
         })
     });
 
@@ -67,13 +67,13 @@
             </div>
 
             <hr class="mb-md-20" />
-            <pre><code class="language-yaml">${`apiVersion: ${Group}/${Version}\nkind: ${Kind}`}</code></pre>
+            <pre class="card-text bg-body-secondary text-dark p-3"><code class="language-yaml">${`apiVersion: ${Group}/${Version}\nkind: ${Kind}`}</code></pre>
 
             <p class="font-size-18">${React.createElement('div', { dangerouslySetInnerHTML: { __html: getDescription(Schema) } })}</p>
 
-            <div class="${properties == null ? 'd-none' : 'd-flex'} flex-row-reverse mb-10 mt-10">
-                <button class="btn ml-10" type="button" onClick=${expandAll}>+ expand all</button>
-                <button class="btn" type="button" onClick=${collapseAll}>- collapse all</button>
+            <div class="${properties == null ? 'd-none' : 'd-flex'} flex-row-reverse mb-2 mt-3">
+                <button class="btn btn-secondary ms-2" type="button" onClick=${expandAll}>+ expand all</button>
+                <button class="btn btn-secondary" type="button" onClick=${collapseAll}>- collapse all</button>
             </div>
             <div class="collapse-group">
                 ${properties != null
@@ -145,12 +145,13 @@
         }, []);
 
         return html`
-        <details class="collapse-panel" open="${isOpen}" onToggle=${e => { setIsOpen(e.target.open); e.stopPropagation(); }}>
-            <summary class="collapse-header position-relative">
-                ${key} <kbd class="text-muted">${type}</kbd> ${required ? html`<span class="badge badge-primary">required</span>` : ''}
-                <button class="btn btn-sm position-absolute right-0 top-0 m-5 copy-url z-10" type="button" data-clipboard-text="${fullLink}">🔗</button>
+        <details class="collapse-panel border border-start mt-2" open="${isOpen}" onToggle=${e => { setIsOpen(e.target.open); e.stopPropagation(); }}>
+            <summary class="collapse-header position-relative bg-primary-subtle p-2 ps-3">
+                <span class="key-content ms-2 me-2">${key}</span>
+                <kbd class="text-bg-secondary">${type}</kbd> ${required ? html`<span class="badge text-bg-warning">required</span>` : ''}
+                <button class="btn btn-lg position-absolute end-0 top-0 copy-url z-10" type="button" data-clipboard-text="${fullLink}">🔗</button>
             </summary>
-            <div id="${slug}" class="collapse-content">
+            <div id="${slug}" class="collapse-content p-3">
                 ${React.createElement("div", { className: 'property-description', dangerouslySetInnerHTML: { __html: getDescription(property) } })}
                 ${propKeys.length > 0 ? html`<br />` : ''}
                 <div class="collapse-group">
@@ -165,10 +166,10 @@
 
     function PartLabel({ type, value }) {
         return html`
-        <div class="mt-10">
-            <span class="font-weight-semibold font-size-24">${value}</span>
+        <div class="mt-1">
+            <span class="fw-semibold fs-5">${value}</span>
             <br />
-            <span class="badge text-muted font-size-12">${type}</span>
+            <span class="badge text-bg-secondary">${type}</span>
         </div>`;
     }
 

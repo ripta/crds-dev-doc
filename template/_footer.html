@@ -1,14 +1,74 @@
-<script src="https://cdnjs.cloudflare.com/ajax/libs/halfmoon/2.0.0/js/halfmoon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.1/attribution.js" integrity="sha256-1lIkxUOvLmxpfk9lU7gVv7Ul1At64CimZ6WahU7aMIw=" crossorigin="anonymous"></script>
 
 <script>
-    // Used to prevent flashing light mode.
-    (() => {
-        if (halfmoon.getPreferredMode() === "not-set") {
-            const mode = window.matchMedia("(prefers-color-scheme: dark)");
-            if (mode.matches) {
-                halfmoon.toggleDarkMode();
+    const themePrefName = 'halfmoon-preferred-mode';
+    const halfmoon = {
+        getPreferredMode: function() {
+            const mode = localStorage.getItem(themePrefName);
+            if (mode === "light" || mode === "dark") {
+                return mode;
             }
-        }
-    })();
+
+            return window.matchMedia("(prefers-color-scheme: dark-mode)").matches ? "dark" : "light";
+        },
+
+        setMode: function(mode) {
+            if (mode !== "light" && mode !== "dark") {
+                return;
+            }
+
+            localStorage.setItem(themePrefName, mode);
+            document.documentElement.setAttribute("data-bs-theme", mode);
+            document.querySelectorAll('.mode-toggle').forEach(toggle => {
+                if (mode === 'dark') {
+                    toggle.classList.remove('btn-dark');
+                    toggle.classList.add('btn-light');
+                } else {
+                    toggle.classList.remove('btn-light');
+                    toggle.classList.add('btn-dark');
+                }
+            });
+        },
+
+        initStickyAlert: function(options) {
+            // Create and show a sticky alert
+            const alertsContainer = document.querySelector('.sticky-alerts');
+            if (!alertsContainer) return;
+            
+            const alert = document.createElement('div');
+            alert.className = 'toast fade show';
+            alert.setAttribute('role', 'alert');
+            alert.innerHTML = `
+                <div class="toast-body bg-primary-subtle">${options.content}</div>
+            `;
+            
+            alertsContainer.appendChild(alert);
+            
+            // Auto-dismiss after timeShown milliseconds
+            if (options.timeShown) {
+                setTimeout(() => {
+                    alert.remove();
+                }, options.timeShown);
+            }
+            
+            // Handle close button click
+            const closeBtn = alert.querySelector('.close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => alert.remove());
+            }
+        },
+    };
+    
+    window.halfmoon = halfmoon;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        halfmoon.setMode(halfmoon.getPreferredMode());
+        document.querySelectorAll('.mode-toggle').forEach(toggle => {
+            toggle.addEventListener('click', function() {
+                const currentMode = halfmoon.getPreferredMode();
+                const newMode = currentMode === 'light' ? 'dark' : 'light';
+                halfmoon.setMode(newMode);
+            });
+        });
+    });
 </script>
