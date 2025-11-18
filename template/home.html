@@ -13,38 +13,76 @@
                 Custom Resource Definition Docs
             </h1>
             <div id="repo_go" class="mt-3 mb-4"></div>
-            <p>
-                Only public repos on github.com are currently supported. Repositories must contain the CRD manifests in
-                YAML format (i.e., not a helm chart template), have the kind <code>CustomResourceDefinition</code>,
-                be named ending with <code>.yaml</code>, and be able to pass the
-                <a href="https://pkg.go.dev/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation">Kubernetes CRD validator</a>.
-            </p>
-            <p>
-                To find a repo, search for <kbd>github.com/{org}/{repo}</kbd>. This takes you to the latest version indexed.<br>
-                <strong>e.g., </strong> <a href="/repo/github.com/crossplane/crossplane">github.com/crossplane/crossplane</a>
-            </p>
-            <p>
-                To find a repo at a specific tag, search for <kbd>github.com/{org}/{repo}@{version}</kbd>.<br>
-                <strong>e.g., </strong> <a href="/repo/github.com/crossplane/crossplane@v2.0.0">github.com/crossplane/crossplane@v2.0.0</a>
-                or <a href="/repo/github.com/prometheus-operator/prometheus-operator@pkg/apis/monitoring/v0.65.2">github.com/prometheus-operator/prometheus-operator@pkg/apis/monitoring/v0.65.2</a>
-            </p>
-            <p>
-                To find a CRD by its GVK, search for <kbd>{group}/{version}/{kind}</kbd>.
-                This takes you to a list of all repos and versions that contain that GVK.<br>
-                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com/v1/Prometheus">monitoring.coreos.com/v1/Prometheus</a>
-            </p>
-            <p>
-                To list all kinds within a group-version, search for <kbd>{group}/{version}</kbd>.<br>
-                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com/v1">monitoring.coreos.com/v1</a>
-            </p>
-            <p>
-                To list all versions within a group, search for <kbd>{group}</kbd>.<br>
-                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com">monitoring.coreos.com</a>
-            </p>
-            <p>
+
+            <p class="mt-3 mb-4 text-center">
                 You can also explore <a href="/recent">the most recently indexed repositories</a>,
-                or <a href="/gvk">an index of all indexed CRDs by group</a>.
+                or browse <a href="/gvk">all indexed CRDs by group</a>.
             </p>
+
+            <div class="collapse-group">
+                <details class="collapse-panel border border-start mt-2">
+                    <summary class="collapse-header position-relative bg-primary-subtle p-2 ps-3">
+                        <strong>Why are there no CRDs for my repo, even though it's indexed?</strong>
+                    </summary>
+                    <div class="collapse-content p-3">
+                        <p>
+                            Only public repos on github.com are currently supported. Repositories must contain the CRD manifests in
+                            YAML format (i.e., not a helm chart template), have the kind <code>CustomResourceDefinition</code>,
+                            be named ending with <code>.yaml</code>, and be able to pass the
+                            <a href="https://pkg.go.dev/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation">Kubernetes CRD validator</a>.
+                            Go source files are not currently sufficient, since we don't run Kubernetes code generation tools.
+                        </p>
+                        <p>
+                            If your repo meets these criteria and you still don't see any CRDs, consider opening an issue on
+                            <a href="https://github.com/ripta/crds-dev-doc">the project repository</a>, or contributing a fix.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="collapse-panel border border-start mt-2">
+                    <summary class="collapse-header position-relative bg-primary-subtle p-2 ps-3">
+                        <strong>What kinds of queries do you support?</strong>
+                    </summary>
+                    <div class="collapse-content p-3">
+                        <p>
+                            This site supports two kinds of queries: repository lookups and GVK lookups.
+                        </p>
+                        <p>
+                            For new repositories, or new versions of existing repositories:
+                        </p>
+                        <ul>
+                            <li>
+                                To find a repo, search for <kbd class="text-dark bg-dark-subtle pe-2 ps-2">github.com/{org}/{repo}</kbd>.
+                                This shows you a list of all versions of that repo that have been indexed.
+                                <strong>e.g., </strong> <a href="/repo/github.com/crossplane/crossplane">github.com/crossplane/crossplane</a>
+                            </li>
+                            <li>
+                                To find a repo at a specific tag, search for <kbd class="text-dark bg-dark-subtle pe-2 ps-2">github.com/{org}/{repo}@{version}</kbd>.
+                                <strong>e.g., </strong> <a href="/repo/github.com/crossplane/crossplane@v2.0.0">github.com/crossplane/crossplane@v2.0.0</a>
+                                or <a href="/repo/github.com/prometheus-operator/prometheus-operator@pkg/apis/monitoring/v0.65.2">github.com/prometheus-operator/prometheus-operator@pkg/apis/monitoring/v0.65.2</a>
+                            </li>
+                        </ul>
+                        <p>
+                            Once a repository is indexed by name, its GVKs can be browsed directly by name:
+                        </p>
+                        <ul>
+                            <li>
+                                To find a CRD by its GVK, search for <kbd class="text-dark bg-dark-subtle pe-2 ps-2">{group}/{version}/{kind}</kbd>.
+                                This takes you to a list of all repos and versions that contain that GVK.
+                                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com/v1/Prometheus">monitoring.coreos.com/v1/Prometheus</a>
+                            </li>
+                            <li>
+                                To list all kinds within a group-version, search for <kbd class="text-dark bg-dark-subtle pe-2 ps-2">{group}/{version}</kbd>.
+                                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com/v1">monitoring.coreos.com/v1</a>
+                            </li>
+                            <li>
+                                To list all versions within a group, search for <kbd class="text-dark bg-dark-subtle pe-2 ps-2">{group}</kbd>.
+                                <strong>e.g., </strong> <a href="/gvk/monitoring.coreos.com">monitoring.coreos.com</a>
+                            </li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
         </div>
     </div>
 </div>
@@ -86,7 +124,7 @@
         return html`
         <form class="input-group input-group-lg" onSubmit=${onSubmit}>
             <span class="input-group-text"><kbd class="ps-3 pe-3">/</kbd></span>
-            <input ref=${input} type="text" class="form-control" placeholder="github.com/crossplane/crossplane@v2.0.0" onInput=${e => setUrl(e.target.value)} value=${url} />
+            <input ref=${input} type="text" class="form-control" placeholder="e.g., github.com/crossplane/crossplane@v2.0.0" onInput=${e => setUrl(e.target.value)} value=${url} />
             <button class="btn btn-primary ps-3 pe-3" type="search">Go</span>
         </form>`;
     }
@@ -102,6 +140,19 @@
 
     .home-page .hero .site-title {
         margin-bottom: 2rem;
+    }
+
+    .home-page .collapse-header {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .home-page .collapse-header i.fa-chevron-right {
+        transition: transform 0.2s ease;
+    }
+
+    .home-page details[open] .collapse-header i.fa-chevron-right {
+        transform: rotate(90deg);
     }
 
     @media screen and (max-width: 575px) {
