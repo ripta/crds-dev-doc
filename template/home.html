@@ -7,19 +7,15 @@
 </nav>
 
 <div class="content-wrapper home-page">
-    <div class="container mt-md-20">
+    <div class="container">
         <div class="content hero">
             <h1 class="text-center site-title">
                 crds.r8y.page
             </h1>
-            <div id="repo_go"></div>
-            <p class="text-center">
-                The code for crds.r8y.page can be found on GitHub at <a href="https://github.com/ripta/crds-dev-doc">ripta/crds-dev-doc</a>;<br>
-                it was forked from <a href="https://github.com/crdsdev/doc">crdsdev/doc</a>, which hadn't been updated in a while.
-            </p>
+            <div id="repo_go" class="mt-3 mb-4"></div>
             <p>
                 Only public repos on github.com are currently supported. Repositories must contain the CRD manifests in
-                YAML format (e.g., not JSON, not a helm chart template), have the kind <code>CustomResourceDefinition</code>,
+                YAML format (i.e., not a helm chart template), have the kind <code>CustomResourceDefinition</code>,
                 be named ending with <code>.yaml</code>, and be able to pass the
                 <a href="https://pkg.go.dev/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation">Kubernetes CRD validator</a>.
             </p>
@@ -79,7 +75,7 @@
             halfmoon.keydownHandler = e => {
                 if (!(document.querySelector("input:focus") || document.querySelector("textarea:focus") || document.querySelector("select:focus"))) {
                     // Focus the repository search input when [/] is pressed
-                    if (event.which == 191) {
+                    if (e.which == 191) {
                         input.current && input.current.focus();
                         e.preventDefault();
                     }
@@ -89,13 +85,9 @@
 
         return html`
         <form class="input-group input-group-lg" onSubmit=${onSubmit}>
-            <div class="input-group-prepend">
-                <span class="input-group-text"><kbd class="ml-5">/</kbd></span>
-            </div>
-            <input ref=${input} type="text" class="form-control" placeholder="github.com/crossplane/provider-gcp" onInput=${e => setUrl(e.target.value)} value=${url} />
-            <div class="input-group-append">
-                <button class="btn btn-primary" type="search">Go</span>
-            </div>
+            <span class="input-group-text"><kbd class="ps-3 pe-3">/</kbd></span>
+            <input ref=${input} type="text" class="form-control" placeholder="github.com/crossplane/crossplane@v2.0.0" onInput=${e => setUrl(e.target.value)} value=${url} />
+            <button class="btn btn-primary ps-3 pe-3" type="search">Go</span>
         </form>`;
     }
     const root = ReactDOM.createRoot(document.getElementById("repo_go"));

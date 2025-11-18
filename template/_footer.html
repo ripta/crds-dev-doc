@@ -57,6 +57,8 @@
                 closeBtn.addEventListener('click', () => alert.remove());
             }
         },
+
+        keydownHandler: null,
     };
     
     window.halfmoon = halfmoon;
@@ -70,5 +72,11 @@
                 halfmoon.setMode(newMode);
             });
         });
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (halfmoon.keydownHandler) {
+            halfmoon.keydownHandler(e);
+        }
     });
 </script>
