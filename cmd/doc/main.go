@@ -59,8 +59,6 @@ var (
 	gitterAddrEnv     = "GITTER_ADDR"
 	defaultGitterAddr = "127.0.0.1:5002"
 
-	cookieDarkMode = "halfmoon_preferredMode"
-
 	gitterAddr        string
 	gitterSemaphore   chan struct{}
 	gitterPingTime    atomic.Int64
@@ -333,12 +331,7 @@ func main() {
 }
 
 func getPageData(r *http.Request, title string, disableNavBar bool) pageData {
-	var isDarkMode = false
-	if cookie, err := r.Cookie(cookieDarkMode); err == nil && cookie.Value == "dark-mode" {
-		isDarkMode = true
-	}
 	return pageData{
-		IsDarkMode:    isDarkMode,
 		DisableNavBar: disableNavBar,
 		Title:         title,
 		IndexerAlive:  gitterIsAlive(),
