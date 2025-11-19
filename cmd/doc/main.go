@@ -857,6 +857,11 @@ func org(w http.ResponseWriter, r *http.Request) {
 func doc(w http.ResponseWriter, r *http.Request) {
 	rest, ok := strings.CutPrefix(r.URL.Path, "/repo")
 	if !ok {
+		if strings.HasPrefix(r.URL.Path, "/github.com") {
+			http.Redirect(w, r, "/repo"+r.URL.Path, http.StatusMovedPermanently)
+			return
+		}
+
 		http.Error(w, "Invalid URL.", http.StatusNotFound)
 		return
 	}
