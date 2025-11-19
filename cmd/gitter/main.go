@@ -61,6 +61,8 @@ const (
 	maxRuntime  = 1 * time.Minute
 	maxTagAge   = 4 * 365 * 24 * time.Hour // 4 years
 
+	maxCRDsPerTag = 300
+
 	minRetryInterval = 24 * time.Hour
 	maxErrorLength   = 950
 
@@ -403,11 +405,16 @@ func (g *Gitter) doIndex(ctx context.Context, gRepo models.GitterRepo, fullRepo 
 			logger.Info("skipping tag: no CRDs found", "tag", t.name)
 			continue
 		}
+		if len(repoCRDs) > maxCRDsPerTag {
+			return fmt.Errorf("too many CRDs found in tag %s: %d (limit %d)", t.name, len(repoCRDs), maxCRDsPerTag)
+		}
 
 		allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
 		for _, crd := range repoCRDs {
 			allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
 		}
+
+		logger.Info("found CRDs for tag", "tag", t.name, "count", len(repoCRDs))
 		if !g.dryRun {
 			if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
 				return fmt.Errorf("error inserting CRDs: %s@%s (%v)", repo, t.name, err)
