@@ -85,6 +85,23 @@
 
                 <details class="collapse-panel border border-start mt-2">
                     <summary class="collapse-header position-relative bg-primary-subtle p-2 ps-3">
+                        <strong>Are there limits to the number of tags or CRDs you'll index in a repository?</strong>
+                    </summary>
+                    <div class="collapse-content p-3">
+                        <p>
+                            Yes, there are several limits to keep in mind:
+                        </p>
+                        <ul>
+                            <li>a tag must be created in last four years;</li>
+                            <li>a tag must contain at most 300 CRDs;</li>
+                            <li>each YAML file must be at most 500 KiB, though each file may contain any number of CRDs; and</li>
+                            <li>indexing must be completed in one minute.</li>
+                        </ul>
+                    </div>
+                </details>
+
+                <details class="collapse-panel border border-start mt-2">
+                    <summary class="collapse-header position-relative bg-primary-subtle p-2 ps-3">
                         <strong>Do you accept feature requests and patches?</strong>
                     </summary>
                     <div class="collapse-content p-3">
