@@ -104,6 +104,8 @@ var page = render.New(render.Options{
 })
 
 type pageData struct {
+	AppName       string
+	AppVersion    string
 	DisableNavBar bool
 	IsDarkMode    bool
 	Title         string
@@ -321,7 +323,10 @@ func main() {
 }
 
 func getPageData(r *http.Request, title string, disableNavBar bool) pageData {
+	name, version, _ := appVersion()
 	return pageData{
+		AppName:       name,
+		AppVersion:    version,
 		DisableNavBar: disableNavBar,
 		Title:         title,
 		IndexerAlive:  gitterIsAlive(),
