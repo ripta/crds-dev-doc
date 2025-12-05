@@ -35,6 +35,10 @@
     marked.use({
         renderer: {
             code: (code, lang, escaped) => {
+                if(window.Prism && !Prism.languages[lang]) {
+                    lang = 'text';
+                }
+
                 const tokenizedCode = window.Prism ? Prism.highlight(code, Prism.languages[lang], lang) : `${code}`;
                 return `<pre class="language-${lang}"><code class="language-${lang}">${tokenizedCode}</code></pre>`;
             }
