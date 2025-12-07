@@ -272,6 +272,95 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 	return nil
 }
 
+type repoCatchupInfo struct {
+	name          string
+	newestTag     string
+	newestTagTime time.Time
+}
+
+type repoCatchupResult struct {
+	repo    string
+	newTags int
+	err     error
+}
+
+// CatchUp catches up on new tags for each repo in the database, indexing new tags found.
+func (g *Gitter) CatchUp(_ struct{}, reply *string) error {
+	ctx := context.Background()
+
+	rows, err := g.conn.Query(ctx, `
+		SELECT
+			repo,
+			MAX(time) as latest_tag_time,
+			(SELECT name FROM tags t2 WHERE t2.repo = t1.repo ORDER BY time DESC LIMIT 1) as latest_tag_name
+		FROM tags t1
+		WHERE alias_tag_id IS NULL
+		GROUP BY repo
+		ORDER BY repo
+	`)
+	if err != nil {
+		*reply = "failed to query repositories"
+		return fmt.Errorf("query error: %w", err)
+	}
+	defer rows.Close()
+
+	repos := []repoCatchupInfo{}
+	for rows.Next() {
+		r := repoCatchupInfo{}
+		if err := rows.Scan(&r.name, &r.newestTagTime, &r.newestTag); err != nil {
+			logger.Error("failed to scan repo", "err", err)
+			continue
+		}
+
+		repos = append(repos, r)
+	}
+
+	logger.Info("starting catch-up", "repo_count", len(repos))
+
+	wg := sync.WaitGroup{}
+
+	results := make(chan repoCatchupResult, len(repos))
+	for _, r := range repos {
+		wg.Add(1)
+		go func(ri repoCatchupInfo) {
+			defer wg.Done()
+
+			if _, loaded := g.locks.LoadOrStore(ri.name, 1); loaded {
+				logger.Info("skipping repo: already being indexed", "repo", ri.name)
+				results <- repoCatchupResult{repo: ri.name, newTags: 0, err: fmt.Errorf("already indexing")}
+				return
+			}
+			defer g.locks.Delete(ri.name)
+
+			ctx, cancel := context.WithTimeout(context.Background(), maxRuntime)
+			defer cancel()
+
+			newTags, err := g.catchUpRepo(ctx, ri.name, ri.newestTag, ri.newestTagTime)
+			results <- repoCatchupResult{repo: ri.name, newTags: newTags, err: err}
+		}(r)
+	}
+
+	wg.Wait()
+	close(results)
+
+	totalRepos := 0
+	totalNewTags := 0
+	totalErrors := 0
+	for r := range results {
+		totalRepos++
+		totalNewTags += r.newTags
+		if r.err != nil {
+			totalErrors++
+			logger.Error("catch-up failed for repo", "repo", r.repo, "err", r.err)
+		} else if r.newTags > 0 {
+			logger.Info("catch-up succeeded", "repo", r.repo, "new_tags", r.newTags)
+		}
+	}
+
+	*reply = fmt.Sprintf("Catch-up completed: %d repos processed, %d new tags indexed, %d errors", totalRepos, totalNewTags, totalErrors)
+	return nil
+}
+
 func (g *Gitter) doIndex(ctx context.Context, gRepo models.GitterRepo, fullRepo string) error {
 	var dir string
 	var repo *git.Repository
@@ -495,12 +584,164 @@ func (g *Gitter) indexSingleTag(ctx context.Context, dir string, t tag, repo *gi
 	return nil
 }
 
+// catchUpRepo processes a single repository to discover and index new tags.
+// Returns stats about new tags indexed and any error encountered.
+func (g *Gitter) catchUpRepo(ctx context.Context, repoName string, newestIndexedTag string, newestIndexedTime time.Time) (int, error) {
+	// Parse repo name: github.com/org/repo
+	parts := strings.Split(strings.TrimPrefix(repoName, "github.com/"), "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid repo format: %s", repoName)
+	}
+	org, repoShort := parts[0], parts[1]
+
+	// Open or clone repository
+	var dir string
+	var gitRepo *git.Repository
+	var err error
+
+	if g.persistRepos {
+		dir = path.Join(g.persistPath, "github.com", strings.ToLower(org), strings.ToLower(repoShort))
+		if repoExists(dir) {
+			gitRepo, err = git.PlainOpen(dir)
+			if err != nil {
+				return 0, fmt.Errorf("unable to open existing repository: %w", err)
+			}
+
+			// Fetch latest tags
+			fetchOpts := &git.FetchOptions{
+				Tags:     git.AllTags,
+				Progress: os.Stdout,
+			}
+			if err := gitRepo.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+				return 0, fmt.Errorf("git fetch error: %w", err)
+			}
+		} else {
+			// Clone if doesn't exist
+			parentDir := path.Dir(dir)
+			if err := os.MkdirAll(parentDir, 0755); err != nil {
+				return 0, fmt.Errorf("unable to create parent directory: %w", err)
+			}
+
+			cloneOpts := &git.CloneOptions{
+				URL:               fmt.Sprintf("https://%s", repoName),
+				Depth:             1,
+				Progress:          os.Stdout,
+				RecurseSubmodules: git.NoRecurseSubmodules,
+			}
+			gitRepo, err = git.PlainCloneContext(ctx, dir, false, cloneOpts)
+			if err != nil {
+				return 0, fmt.Errorf("git clone error: %w", err)
+			}
+		}
+	} else {
+		// Use temp directory
+		dir, err = os.MkdirTemp(os.TempDir(), "doc-gitter-catchup-*")
+		if err != nil {
+			return 0, fmt.Errorf("unable to create working directory: %w", err)
+		}
+		defer os.RemoveAll(dir)
+
+		cloneOpts := &git.CloneOptions{
+			URL:               fmt.Sprintf("https://%s", repoName),
+			Depth:             1,
+			Progress:          os.Stdout,
+			RecurseSubmodules: git.NoRecurseSubmodules,
+		}
+		gitRepo, err = git.PlainCloneContext(ctx, dir, false, cloneOpts)
+		if err != nil {
+			return 0, fmt.Errorf("git clone error: %w", err)
+		}
+	}
+
+	// Discover tags newer than the last indexed tag
+	newTags, err := discoverNewTags(gitRepo, newestIndexedTime)
+	if err != nil {
+		return 0, fmt.Errorf("error discovering tags: %w", err)
+	}
+
+	if len(newTags) == 0 {
+		logger.Info("no new tags found", "repo", repoName)
+		return 0, nil
+	}
+
+	logger.Info("found new tags", "repo", repoName, "count", len(newTags))
+
+	// Get worktree
+	w, err := gitRepo.Worktree()
+	if err != nil {
+		return 0, fmt.Errorf("git worktree error: %w", err)
+	}
+
+	// Index each new tag
+	successCount := 0
+	for _, t := range newTags {
+		if err := g.indexSingleTag(ctx, dir, t, gitRepo, w, repoName); err != nil {
+			logger.Error("failed to index tag", "repo", repoName, "tag", t.name, "err", err)
+
+			// Record failure in attempts table
+			if !g.dryRun {
+				truncStr := truncateError(err.Error())
+				if _, dbErr := g.conn.Exec(context.Background(),
+					"INSERT INTO attempts(repo, tag, time, error) VALUES ($1, $2, NOW(), $3) ON CONFLICT (repo, tag) DO UPDATE SET time = EXCLUDED.time, error = EXCLUDED.error",
+					repoName, t.name, truncStr); dbErr != nil {
+					logger.Error("failed to record indexing attempt", "repo", repoName, "tag", t.name, "err", dbErr)
+				}
+			}
+			// Continue processing other tags
+			continue
+		}
+		successCount++
+	}
+
+	return successCount, nil
+}
+
 func truncateError(errMsg string) string {
 	if len(errMsg) <= maxErrorLength {
 		return errMsg
 	}
 	suffix := fmt.Sprintf(" [truncated at %d bytes]", maxErrorLength)
 	return errMsg[:maxErrorLength] + suffix
+}
+
+// discoverNewTags returns all tags in the repo newer than the given timestamp,
+// sorted chronologically (oldest first) for indexing in order.
+func discoverNewTags(repo *git.Repository, afterTime time.Time) ([]tag, error) {
+	iter, err := repo.Tags()
+	if err != nil {
+		return nil, fmt.Errorf("git tags error: %w", err)
+	}
+	defer iter.Close()
+
+	var newTags []tag
+	if err := iter.ForEach(func(obj *plumbing.Reference) error {
+		h, err := repo.ResolveRevision(plumbing.Revision(obj.Hash().String()))
+		if err != nil || h == nil {
+			return nil
+		}
+		c, err := repo.CommitObject(*h)
+		if err != nil || c == nil {
+			return nil
+		}
+
+		if c.Committer.When.After(afterTime) && c.Committer.When.After(time.Now().Add(-1*maxTagAge)) {
+			newTags = append(newTags, tag{
+				timestamp: c.Committer.When,
+				hash:      obj.Hash(),
+				name:      obj.Name().Short(),
+			})
+		}
+
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	sort.Slice(newTags, func(i, j int) bool {
+		return newTags[i].timestamp.Before(newTags[j].timestamp)
+	})
+
+	return newTags, nil
 }
 
 var (
