@@ -392,97 +392,103 @@ func (g *Gitter) doIndex(ctx context.Context, gRepo models.GitterRepo, fullRepo 
 	})
 
 	for _, t := range tags {
-		h, err := repo.ResolveRevision(plumbing.Revision(t.hash.String()))
-		if err != nil || h == nil {
-			logger.Warn("unable to resolve revision", "hash", t.hash.String(), "err", err)
+		if err := g.indexSingleTag(ctx, dir, t, repo, w, fullRepo); err != nil {
+			logger.Error("unable to index tag", "tag", t.name, "hash", t.hash.String(), "err", err)
 			continue
 		}
-		c, err := repo.CommitObject(*h)
-		if err != nil || c == nil {
-			logger.Warn("unable to resolve revision", "hash", t.hash.String(), "err", err)
-			continue
-		}
+	}
 
-		// Check if another non-alias tag exists with the same hash
-		r := g.conn.QueryRow(ctx, "SELECT id, name, repo FROM tags WHERE hash_sha1 = decode($1, 'hex') AND alias_tag_id IS NULL LIMIT 1", h.String())
-		var originalTagID *int
-		var originalName, originalRepo string
-		var origID int
-		if err := r.Scan(&origID, &originalName, &originalRepo); err != nil {
-			if !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("error querying tags by hash from database: %w", err)
-			}
-		} else {
-			originalTagID = &origID
-		}
+	return nil
+}
 
-		// Check if (name, repo) already exists
-		r = g.conn.QueryRow(ctx, "SELECT id, encode(hash_sha1, 'hex'), alias_tag_id FROM tags WHERE name=$1 AND repo=$2", t.name, fullRepo)
-		var tagID int
-		var existingHash string
-		var existingAliasID *int
-		var isAlias bool
+// indexSingleTag indexes a single tag by extracting CRDs and inserting into database.
+func (g *Gitter) indexSingleTag(ctx context.Context, dir string, t tag, repo *git.Repository, w *git.Worktree, fullRepo string) error {
+	h, err := repo.ResolveRevision(plumbing.Revision(t.hash.String()))
+	if err != nil || h == nil {
+		return fmt.Errorf("unable to resolve revision: %w", err)
+	}
 
-		if err := r.Scan(&tagID, &existingHash, &existingAliasID); err != nil {
-			if !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("error querying tags from database: %w", err)
-			}
-			if !g.dryRun {
-				if originalTagID != nil {
-					isAlias = true
-					logger.Info("tag is an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo, "original_tag", originalName, "original_repo", originalRepo, "hash", h.String())
-				}
-				r := g.conn.QueryRow(ctx, "INSERT INTO tags(name, repo, time, hash_sha1, alias_tag_id) VALUES ($1, $2, $3, decode($4, 'hex'), $5) RETURNING id", t.name, fullRepo, c.Committer.When, h.String(), originalTagID)
-				if err := r.Scan(&tagID); err != nil {
-					return fmt.Errorf("error inserting tag into database: %w", err)
-				}
-			} else {
-				if originalTagID != nil {
-					isAlias = true
-					logger.Info("tag would be an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo, "original_tag", originalName, "original_repo", originalRepo, "hash", h.String(), "dry_run", true)
-				} else {
-					logger.Info("would insert new tag", "tag", t.name, "repo", fullRepo, "hash", h.String(), "dry_run", true)
-				}
-			}
-		} else {
-			if existingHash != h.String() {
-				logger.Warn("tag already exists with different hash, skipping", "tag", t.name, "repo", fullRepo, "existing_hash", existingHash, "new_hash", h.String())
-				continue
-			}
-			if existingAliasID != nil {
-				isAlias = true
-				logger.Info("tag is already an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo, "alias_tag_id", *existingAliasID)
-			}
-		}
+	c, err := repo.CommitObject(*h)
+	if err != nil || c == nil {
+		return fmt.Errorf("unable to get commit object: %w", err)
+	}
 
-		// Skip CRD processing if this is an alias
-		if isAlias {
-			continue
+	// Check if another non-alias tag exists with the same hash
+	r := g.conn.QueryRow(ctx, "SELECT id, name, repo FROM tags WHERE hash_sha1 = decode($1, 'hex') AND alias_tag_id IS NULL LIMIT 1", h.String())
+	var originalTagID *int
+	var originalName, originalRepo string
+	var origID int
+	if err := r.Scan(&origID, &originalName, &originalRepo); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("error querying tags by hash: %w", err)
 		}
+	} else {
+		originalTagID = &origID
+	}
 
-		repoCRDs, err := getCRDsFromTag(dir, t.name, h, w)
-		if err != nil {
-			logger.Error("unable to get CRDs", "tag", t.name, "hash", h.String(), "err", err)
-			continue
-		}
-		if len(repoCRDs) == 0 {
-			logger.Info("skipping tag: no CRDs found", "tag", t.name)
-			continue
-		}
-		if len(repoCRDs) > maxCRDsPerTag {
-			return fmt.Errorf("too many CRDs found in tag %s: %d (limit %d)", t.name, len(repoCRDs), maxCRDsPerTag)
-		}
+	// Check if (name, repo) already exists
+	r = g.conn.QueryRow(ctx, "SELECT id, encode(hash_sha1, 'hex'), alias_tag_id FROM tags WHERE name=$1 AND repo=$2", t.name, fullRepo)
+	var tagID int
+	var existingHash string
+	var existingAliasID *int
+	var isAlias bool
 
-		allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
-		for _, crd := range repoCRDs {
-			allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
+	if err := r.Scan(&tagID, &existingHash, &existingAliasID); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("error querying tags: %w", err)
 		}
-
-		logger.Info("found CRDs for tag", "tag", t.name, "count", len(repoCRDs))
 		if !g.dryRun {
-			if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
-				return fmt.Errorf("error inserting CRDs: %s@%s (%v)", repo, t.name, err)
+			if originalTagID != nil {
+				isAlias = true
+				logger.Info("tag is an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo, "original_tag", originalName, "original_repo", originalRepo, "hash", h.String())
 			}
+			r := g.conn.QueryRow(ctx, "INSERT INTO tags(name, repo, time, hash_sha1, alias_tag_id) VALUES ($1, $2, $3, decode($4, 'hex'), $5) RETURNING id", t.name, fullRepo, c.Committer.When, h.String(), originalTagID)
+			if err := r.Scan(&tagID); err != nil {
+				return fmt.Errorf("error inserting tag: %w", err)
+			}
+		} else {
+			if originalTagID != nil {
+				isAlias = true
+				logger.Info("tag would be an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo, "dry_run", true)
+			}
+		}
+	} else {
+		if existingHash != h.String() {
+			logger.Warn("tag already exists with different hash, skipping", "tag", t.name, "repo", fullRepo)
+			return nil
+		}
+		if existingAliasID != nil {
+			isAlias = true
+			logger.Info("tag is already an alias, skipping CRD indexing", "tag", t.name, "repo", fullRepo)
+		}
+	}
+
+	// Skip CRD processing if this is an alias
+	if isAlias {
+		return nil
+	}
+
+	repoCRDs, err := getCRDsFromTag(dir, t.name, h, w)
+	if err != nil {
+		return fmt.Errorf("unable to get CRDs: %w", err)
+	}
+	if len(repoCRDs) == 0 {
+		logger.Info("skipping tag: no CRDs found", "tag", t.name)
+		return nil
+	}
+	if len(repoCRDs) > maxCRDsPerTag {
+		return fmt.Errorf("too many CRDs found in tag %s: %d (limit %d)", t.name, len(repoCRDs), maxCRDsPerTag)
+	}
+
+	allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
+	for _, crd := range repoCRDs {
+		allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
+	}
+
+	logger.Info("found CRDs for tag", "tag", t.name, "count", len(repoCRDs))
+	if !g.dryRun {
+		if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
+			return fmt.Errorf("error inserting CRDs: %w", err)
 		}
 	}
 
