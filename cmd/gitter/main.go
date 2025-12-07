@@ -199,9 +199,9 @@ func (g *Gitter) Ping(_ struct{}, reply *string) error {
 // in the background. Subsequent calls to Index for the same repo/tag while indexing
 // is in progress will return an error.
 func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
-	key := fmt.Sprintf("%s/%s@%s", gRepo.Org, gRepo.Repo, gRepo.Tag)
+	key := fmt.Sprintf("github.com/%s/%s", gRepo.Org, gRepo.Repo)
 	if _, ok := g.locks.LoadOrStore(key, 1); ok {
-		*reply = "indexing already in progress"
+		*reply = fmt.Sprintf("indexing %q already in progress", key)
 		return nil
 	}
 
