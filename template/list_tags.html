@@ -43,7 +43,18 @@
     }
 
     function TagsTable() {
-        const table = useTable({ columns, data }, useSortBy, useGlobalFilter);
+        const table = useTable({
+            columns,
+            data,
+            initialState: {
+                sortBy: [
+                    {
+                        id: 'Timestamp',
+                        desc: true
+                    }
+                ]
+            }
+        }, useSortBy, useGlobalFilter);
         const {
             getTableProps,
             getTableBodyProps,
