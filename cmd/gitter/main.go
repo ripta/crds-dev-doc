@@ -53,8 +53,12 @@ const (
 	listenAddrEnv     = "GITTER_LISTEN_ADDR"
 	defaultListenAddr = ":5002"
 
+	persistReposEnv    = "GITTER_PERSIST_REPOS"
+	persistPathEnv     = "GITTER_PERSIST_PATH"
+	defaultPersistPath = "/tmp/gitter-repos"
+
 	maxFileSize = 500 * 1024 // 500 KB
-	maxRuntime  = 1 * time.Minute
+	maxRuntime  = 2 * time.Minute
 	maxTagAge   = 4 * 365 * 24 * time.Hour // 4 years
 
 	maxCRDsPerTag = 300
@@ -109,11 +113,24 @@ func main() {
 		limit = rate.Inf
 	}
 
+	persistRepos := os.Getenv(persistReposEnv) == "true"
+	persistPath := getPersistPath()
+	if persistRepos {
+		if err := os.MkdirAll(persistPath, 0755); err != nil {
+			logger.Error("failed to create persist path", "path", persistPath, "err", err)
+			os.Exit(1)
+		}
+		logger.Info("repository persistence enabled", "path", persistPath)
+	}
+
 	gitter := &Gitter{
 		conn:    pool,
 		locks:   sync.Map{},
 		limiter: rate.NewLimiter(limit, 5),
 		dryRun:  os.Getenv(dryRunEnv) == "true",
+
+		persistRepos: persistRepos,
+		persistPath:  persistPath,
 	}
 	rpc.Register(gitter)
 	rpc.HandleHTTP()
@@ -133,18 +150,41 @@ func main() {
 	http.Serve(l, nil)
 }
 
+func getPersistPath() string {
+	if p := os.Getenv(persistPathEnv); p != "" {
+		return p
+	}
+	return defaultPersistPath
+}
+
 // Gitter indexes git repos.
 type Gitter struct {
 	conn    *pgxpool.Pool
 	locks   sync.Map
 	limiter *rate.Limiter
 	dryRun  bool
+	// persistRepos indicates whether to persist cloned git repos on disk for
+	// debugging, easier development, and faster repeated indexing.
+	persistRepos bool
+	// persistPath is the base path for persisting repos on disk.
+	persistPath string
 }
 
 type tag struct {
 	timestamp time.Time
 	hash      plumbing.Hash
 	name      string
+}
+
+// repoExists checks if .git is a directory repository at the given path.
+func repoExists(dir string) bool {
+	gitDir := path.Join(dir, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil {
+		return false
+	}
+
+	return info.IsDir()
 }
 
 func (g *Gitter) Ping(_ struct{}, reply *string) error {
@@ -233,33 +273,63 @@ func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
 }
 
 func (g *Gitter) doIndex(ctx context.Context, gRepo models.GitterRepo, fullRepo string) error {
-	dir, err := os.MkdirTemp(os.TempDir(), "doc-gitter-*")
-	if err != nil {
-		return fmt.Errorf("unable to create working directory for git checkout: %w", err)
-	}
-	defer os.RemoveAll(dir)
+	var dir string
+	var repo *git.Repository
+	var err error
 
-	if g.dryRun {
-		logger.Info("indexing repo", "org", gRepo.Org, "repo", gRepo.Repo, "tag", gRepo.Tag, "dir", dir, "dry_run", true)
+	if g.persistRepos {
+		dir = path.Join(g.persistPath, "github.com", strings.ToLower(gRepo.Org), strings.ToLower(gRepo.Repo))
+		if repoExists(dir) {
+			repo, err = git.PlainOpen(dir)
+			if err != nil {
+				return fmt.Errorf("unable to open existing repository: %w", err)
+			}
+
+			logger.Info("opened existing repository", "org", gRepo.Org, "repo", gRepo.Repo, "dir", dir)
+
+			fetchOpts := &git.FetchOptions{
+				Tags:     git.AllTags,
+				Progress: os.Stdout,
+			}
+
+			if err := repo.FetchContext(ctx, fetchOpts); err != nil && err != git.NoErrAlreadyUpToDate {
+				return fmt.Errorf("git fetch error: %w", err)
+			}
+			logger.Info("fetched latest tags", "org", gRepo.Org, "repo", gRepo.Repo)
+		} else {
+			parentDir := path.Dir(dir)
+			if err := os.MkdirAll(parentDir, 0755); err != nil {
+				return fmt.Errorf("unable to create parent directory: %w", err)
+			}
+		}
 	} else {
-		logger.Info("indexing repo", "org", gRepo.Org, "repo", gRepo.Repo, "tag", gRepo.Tag, "dir", dir)
+		dir, err = os.MkdirTemp(os.TempDir(), "doc-gitter-*")
+		if err != nil {
+			return fmt.Errorf("unable to create working directory for git checkout: %w", err)
+		}
+		defer os.RemoveAll(dir)
 	}
+
+	logger.Info("indexing repo", "org", gRepo.Org, "repo", gRepo.Repo, "tag", gRepo.Tag, "dir", dir, "dry_run", g.dryRun)
 	defer logger.Info("finished indexing", "org", gRepo.Org, "repo", gRepo.Repo)
 
-	cloneOpts := &git.CloneOptions{
-		URL:               fmt.Sprintf("https://%s", fullRepo),
-		Depth:             1,
-		Progress:          os.Stdout,
-		RecurseSubmodules: git.NoRecurseSubmodules,
-	}
-	if gRepo.Tag != "" {
-		cloneOpts.ReferenceName = plumbing.NewTagReferenceName(gRepo.Tag)
-		cloneOpts.SingleBranch = true
-	}
+	if repo == nil {
+		cloneOpts := &git.CloneOptions{
+			URL:               fmt.Sprintf("https://%s", fullRepo),
+			Depth:             1,
+			Progress:          os.Stdout,
+			RecurseSubmodules: git.NoRecurseSubmodules,
+		}
+		if gRepo.Tag != "" {
+			cloneOpts.ReferenceName = plumbing.NewTagReferenceName(gRepo.Tag)
+			cloneOpts.SingleBranch = true
+		}
 
-	repo, err := git.PlainCloneContext(ctx, dir, false, cloneOpts)
-	if err != nil {
-		return fmt.Errorf("git clone error: %w", err)
+		repo, err = git.PlainCloneContext(ctx, dir, false, cloneOpts)
+		if err != nil {
+			return fmt.Errorf("git clone error: %w", err)
+		}
+		logger.Info("cloned new repository", "org", gRepo.Org, "repo", gRepo.Repo, "dir", dir)
 	}
 	iter, err := repo.Tags()
 	if err != nil {
