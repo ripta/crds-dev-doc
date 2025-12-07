@@ -46,6 +46,8 @@ import (
 )
 
 const (
+	envDevelopment = "IS_DEV"
+
 	crdArgCount = 6
 
 	listenAddrEnv     = "GITTER_LISTEN_ADDR"
@@ -95,15 +97,22 @@ func main() {
 		logger.Error("failed to parse database config", "err", err)
 		os.Exit(1)
 	}
+
 	pool, err := pgxpool.ConnectConfig(context.Background(), conn)
 	if err != nil {
 		logger.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
+
+	limit := rate.Every(2 * time.Minute)
+	if os.Getenv(envDevelopment) == "true" {
+		limit = rate.Inf
+	}
+
 	gitter := &Gitter{
 		conn:    pool,
 		locks:   sync.Map{},
-		limiter: rate.NewLimiter(rate.Every(2*time.Minute), 5),
+		limiter: rate.NewLimiter(limit, 5),
 		dryRun:  os.Getenv(dryRunEnv) == "true",
 	}
 	rpc.Register(gitter)
