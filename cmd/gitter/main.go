@@ -124,13 +124,13 @@ func main() {
 	}
 
 	gitter := &Gitter{
-		conn:    pool,
-		locks:   sync.Map{},
-		limiter: rate.NewLimiter(limit, 5),
-		dryRun:  os.Getenv(dryRunEnv) == "true",
-
-		persistRepos: persistRepos,
-		persistPath:  persistPath,
+		conn:             pool,
+		locks:            sync.Map{},
+		limiter:          rate.NewLimiter(limit, 5),
+		dryRun:           os.Getenv(dryRunEnv) == "true",
+		persistRepos:     persistRepos,
+		persistPath:      persistPath,
+		catchUpSemaphore: make(chan struct{}, 2),
 	}
 	rpc.Register(gitter)
 	rpc.HandleHTTP()
@@ -168,6 +168,8 @@ type Gitter struct {
 	persistRepos bool
 	// persistPath is the base path for persisting repos on disk.
 	persistPath string
+	// catchUpSemaphore limits concurrent repo processing in CatchUp RPC
+	catchUpSemaphore chan struct{}
 }
 
 type tag struct {
@@ -324,6 +326,9 @@ func (g *Gitter) CatchUp(_ struct{}, reply *string) error {
 		wg.Add(1)
 		go func(ri repoCatchupInfo) {
 			defer wg.Done()
+
+			g.catchUpSemaphore <- struct{}{}
+			defer func() { <-g.catchUpSemaphore }()
 
 			if _, loaded := g.locks.LoadOrStore(ri.name, 1); loaded {
 				logger.Info("skipping repo: already being indexed", "repo", ri.name)
