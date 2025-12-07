@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/blang/semver/v4"
 	crdutil "github.com/crdsdev/doc/pkg/crd"
 	"github.com/crdsdev/doc/pkg/models"
 	"github.com/crdsdev/doc/pkg/validation"
@@ -394,6 +395,8 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		Repotags: map[string][]tagInfo{},
 	}
 
+	latestTimestamp := time.Time{}
+	latestHash := ""
 	for rows.Next() {
 		var repo, tag string
 		var timestamp time.Time
@@ -405,18 +408,40 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		isSemver := false
+		if _, err := semver.ParseTolerant(tag); err == nil {
+			isSemver = true
+		}
+
 		data.Repotags[repo] = append(data.Repotags[repo], tagInfo{
 			Name:       tag,
 			Timestamp:  timestamp,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
+			IsSemver:   isSemver,
 		})
 		data.Total++
+
+		if isSemver && timestamp.After(latestTimestamp) {
+			latestTimestamp = timestamp
+			latestHash = hashSHA1
+		}
 	}
 
 	if data.Total == 0 {
 		http.Error(w, "GVK not found.", http.StatusNotFound)
 		return
+	}
+
+	for repo := range data.Repotags {
+		for idx := range data.Repotags[repo] {
+			if !data.Repotags[repo][idx].IsSemver {
+				continue
+			}
+			if data.Repotags[repo][idx].HashSHA1 == latestHash {
+				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "latest")
+			}
+		}
 	}
 
 	if err := page.HTML(w, http.StatusOK, "list_gvk", data); err != nil {
@@ -613,6 +638,8 @@ type tagInfo struct {
 	Timestamp  time.Time
 	HashSHA1   string
 	AliasTagID *int
+	IsSemver   bool
+	Labels     []string
 }
 
 func listTags(w http.ResponseWriter, r *http.Request) {
@@ -629,6 +656,9 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	latestTimestamp := time.Time{}
+	latestHash := ""
+
 	tags := []tagInfo{}
 	for rows.Next() {
 		var t string
@@ -641,11 +671,22 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		isSemver := false
+		if _, err := semver.ParseTolerant(t); err == nil {
+			isSemver = true
+		}
+
+		if isSemver && ts.After(latestTimestamp) {
+			latestTimestamp = ts
+			latestHash = hashSHA1
+		}
+
 		tags = append(tags, tagInfo{
 			Name:       t,
 			Timestamp:  ts,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
+			IsSemver:   isSemver,
 		})
 	}
 
@@ -669,6 +710,15 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "Unable to render new template.")
 		}
 		return
+	}
+
+	for idx := range tags {
+		if !tags[idx].IsSemver {
+			continue
+		}
+		if tags[idx].HashSHA1 == latestHash {
+			tags[idx].Labels = append(tags[idx].Labels, "latest")
+		}
 	}
 
 	emitCacheControl(w, shortCacheDuration)

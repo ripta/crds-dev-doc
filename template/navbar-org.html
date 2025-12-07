@@ -4,6 +4,14 @@
         <a href="/repo/github.com/{{ .Repo }}">{{ .Repo }}</a>
     </li>
     <li class="breadcrumb-item active" aria-current="page" style="--bs-breadcrumb-divider: '@';">
-        {{ .Tag }}
+        <select class="form-control specific-w-md-400 w-sm-100 mb-md-3 mb-2" onchange="handleSelect(this)">
+            {{ $actual := .Tag }}{{ $repo := .Repo }}{{ range $tag := .Tags }}
+            {{ if eq $tag.Name $actual }}
+            <option value="/repo/github.com/{{ $repo }}@{{ $tag.Name }}" selected="selected">{{ $tag.Name }} ({{ $tag.Timestamp }})</option>
+            {{ else }}
+            <option value="/repo/github.com/{{ $repo }}@{{ $tag.Name }}" >{{ $tag.Name }} ({{ $tag.Timestamp }})</option>
+            {{ end }}
+            {{ end }}
+        </select>
     </li>
 </ul>
