@@ -14,7 +14,12 @@
     const { Group, Version, Kind, Repotags, } = {{ . }};
     const data = Object.keys(Repotags).flatMap(repo => {
         return Repotags[repo].map(tagInfo => {
-            return { Repo: repo, Tag: tagInfo.Name, Timestamp: tagInfo.Timestamp };
+            return {
+                Repo: repo,
+                Tag: tagInfo.Name,
+                Timestamp: tagInfo.Timestamp,
+                LabelHTML: (tagInfo.Labels ?? []).map((label) => html`<kbd class="text-bg-secondary">${label}</kbd>`),
+            };
         });
     });
 
@@ -26,7 +31,7 @@
         {
             Header: 'Tag',
             accessor: 'Tag',
-            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/${original.Repo}/${Group}/${Kind}/${Version}@${original.Tag}`}>${value}</a>`,
+            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/${original.Repo}/${Group}/${Kind}/${Version}@${original.Tag}`}>${value}</a> ${original.LabelHTML}`,
         },
         {
             Header: 'Tagged At',

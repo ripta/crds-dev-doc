@@ -15,13 +15,19 @@
     const { useTable, useSortBy, useGlobalFilter  } = ReactTable;
 
     const { Repo, Tags, } = {{ . }};
-    const data = Object.keys(Tags).map(key => Tags[key]);
+    const data = Object.keys(Tags).map(key => {
+        return {
+            Name: Tags[key].Name,
+            Timestamp: Tags[key].Timestamp,
+            LabelHTML: (Tags[key].Labels ?? []).map((label) => html`<kbd class="text-bg-secondary">${label}</kbd>`),
+        };
+    });
 
     const columns = [
         {
             Header: 'Tag',
             accessor: 'Name',
-            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/github.com/${Repo}@${original.Name}`}>${value}</a>`
+            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/github.com/${Repo}@${original.Name}`}>${value}</a> ${original.LabelHTML}`,
         },
         {
             Header: 'Tagged At',
