@@ -440,7 +440,7 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if data.Repotags[repo][idx].HashSHA1 == latestHash {
-				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "latest")
+				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "newest")
 			}
 		}
 	}
@@ -659,6 +659,7 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 
 	latestTimestamp := time.Time{}
 	latestHash := ""
+	latestSemver := semver.Version{}
 
 	tags := []tagInfo{}
 	for rows.Next() {
@@ -673,8 +674,11 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isSemver := false
-		if _, err := semver.ParseTolerant(t); err == nil {
+		if sv, err := semver.ParseTolerant(t); err == nil {
 			isSemver = true
+			if sv.GT(latestSemver) {
+				latestSemver = sv
+			}
 		}
 
 		if isSemver && ts.After(latestTimestamp) {
@@ -718,7 +722,12 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if tags[idx].HashSHA1 == latestHash {
-			tags[idx].Labels = append(tags[idx].Labels, "latest")
+			tags[idx].Labels = append(tags[idx].Labels, "newest")
+		}
+		if sv, err := semver.ParseTolerant(tags[idx].Name); err == nil {
+			if sv.Equals(latestSemver) {
+				tags[idx].Labels = append(tags[idx].Labels, "latest")
+			}
 		}
 	}
 
