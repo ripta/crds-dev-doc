@@ -387,7 +387,8 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		    t.name,
 		    t.time,
 		    encode(t.hash_sha1, 'hex'),
-		    t.alias_tag_id
+		    t.alias_tag_id,
+		    pg_column_size(c.data)
 		FROM tags t
 		INNER JOIN crds c
 		    ON (c.tag_id = t.id)
@@ -417,7 +418,8 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		var timestamp time.Time
 		var hashSHA1 string
 		var aliasTagID *int
-		if err := rows.Scan(&repo, &tag, &timestamp, &hashSHA1, &aliasTagID); err != nil {
+		var dataSize *int
+		if err := rows.Scan(&repo, &tag, &timestamp, &hashSHA1, &aliasTagID, &dataSize); err != nil {
 			logger.Error("failed to scan repo row for GVK", "group", group, "version", version, "kind", kind, "err", err)
 			fmt.Fprint(w, "Unable to get repositories for supplied GVK.")
 			return
@@ -433,6 +435,7 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 			Timestamp:  timestamp,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
+			DataSize:   dataSize,
 			IsSemver:   isSemver,
 		})
 		data.Total++
@@ -653,6 +656,7 @@ type tagInfo struct {
 	Timestamp  time.Time
 	HashSHA1   string
 	AliasTagID *int
+	DataSize   *int
 	IsSemver   bool
 	Labels     []string
 }
