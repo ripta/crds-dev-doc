@@ -18,7 +18,7 @@ CREATE TABLE crds (
     version VARCHAR(255) NOT NULL,
     kind VARCHAR(255) NOT NULL,
     tag_id INTEGER NOT NULL REFERENCES tags (id) ON DELETE CASCADE,
-    filename VARCHAR(255) NOT NULL,
+    filename VARCHAR(1024) NOT NULL,
     data JSONB NOT NULL,
     PRIMARY KEY(tag_id, "group", version, kind)
 );
