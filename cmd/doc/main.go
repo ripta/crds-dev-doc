@@ -659,9 +659,11 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 
 	latestTimestamp := time.Time{}
 	latestHash := ""
-	latestSemver := semver.Version{}
+	latestSemverPre := semver.Version{}
+	latestSemverRelease := semver.Version{}
 
 	tags := []tagInfo{}
+	semverCache := map[string]semver.Version{}
 	for rows.Next() {
 		var t string
 		var ts time.Time
@@ -675,13 +677,18 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 
 		isSemver := false
 		if sv, err := semver.ParseTolerant(t); err == nil {
+			semverCache[t] = sv
+
 			isSemver = true
-			if sv.GT(latestSemver) {
-				latestSemver = sv
+			if sv.GT(latestSemverPre) && len(sv.Pre) > 0 {
+				latestSemverPre = sv
+			}
+			if sv.GT(latestSemverRelease) && len(sv.Pre) == 0 {
+				latestSemverRelease = sv
 			}
 		}
 
-		if isSemver && ts.After(latestTimestamp) {
+		if ts.After(latestTimestamp) {
 			latestTimestamp = ts
 			latestHash = hashSHA1
 		}
@@ -717,15 +724,22 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Label our tags:
+	// - "newest" for the most recently indexed semver tag (by timestamp)
+	// - "latest" for the highest non-prerelease semver tag
+	// - "next" if the highest semver tag is a prerelease
 	for idx := range tags {
-		if !tags[idx].IsSemver {
-			continue
-		}
 		if tags[idx].HashSHA1 == latestHash {
 			tags[idx].Labels = append(tags[idx].Labels, "newest")
 		}
-		if sv, err := semver.ParseTolerant(tags[idx].Name); err == nil {
-			if sv.Equals(latestSemver) {
+		if !tags[idx].IsSemver {
+			continue
+		}
+
+		if sv, ok := semverCache[tags[idx].Name]; ok {
+			if sv.Equals(latestSemverPre) && latestSemverPre.GT(latestSemverRelease) {
+				tags[idx].Labels = append(tags[idx].Labels, "next")
+			} else if sv.Equals(latestSemverRelease) {
 				tags[idx].Labels = append(tags[idx].Labels, "latest")
 			}
 		}
