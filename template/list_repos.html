@@ -1,7 +1,7 @@
 <div class="content-wrapper">
     <div class="container">
-        <p>Found GVK in <b>{{ .Total }} repotags</b></p>
-        <div id="repotags"></div>
+        <p>Repos indexed: <b>{{ .Total }}</b></p>
+        <div id="repos"></div>
     </div>
 </div>
 
@@ -9,44 +9,28 @@
 <script src="https://unpkg.com/react-table@7/dist/react-table.production.min.js"></script>
 <script type="module">
     const { html } = htmReact;
-    const { useTable, useSortBy, useGlobalFilter, } = ReactTable;
+    const { useTable, useSortBy, useGlobalFilter  } = ReactTable;
 
-    const { Group, Version, Kind, Repotags, } = {{ . }};
-    const data = Object.keys(Repotags).flatMap(repo => {
-        return Repotags[repo].map(tagInfo => {
-            return {
-                Repo: repo,
-                Tag: tagInfo.Name,
-                DataSize: tagInfo.DataSize,
-                Timestamp: tagInfo.Timestamp,
-                LabelHTML: (tagInfo.Labels ?? []).map((label) => html`<kbd class="text-bg-secondary">${label}</kbd>`),
-            };
-        });
-    });
+    const { Repos, } = {{ . }};
+    const data = Repos;
 
     const columns = [
         {
-            Header: 'Repo',
-            accessor: 'Repo',
+            Header: 'Repository',
+            accessor: 'Name',
+            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/${original.Name}`}>${value}</a>`,
         },
         {
-            Header: 'Tag',
-            accessor: 'Tag',
-            Cell: ({ row: { original }, value }) => html`<a href=${`/repo/${original.Repo}/${Group}/${Kind}/${Version}@${original.Tag}`}>${value}</a> ${original.LabelHTML}`,
+            Header: 'Tag Count',
+            accessor: 'TagCount',
         },
         {
-            Header: 'Data Size',
-            accessor: 'DataSize',
-            Cell: ({ value }) => html`${value.toLocaleString()} bytes`,
-            className: 'tag-data-size',
-        },
-        {
-            Header: 'Tagged At',
-            accessor: 'Timestamp',
+            Header: 'Last Indexed',
+            accessor: 'LastDate',
         },
     ];
 
-    function CRDHeader(column) {
+    function ReposHeader(column) {
         return html`<th ...${column.getHeaderProps(column.getSortByToggleProps())}>
         ${column.render('Header')}
             <span class="sort-header ${column.isSorted ? 'sort-header-active' : ''}">
@@ -59,18 +43,18 @@
         </th>`
     }
 
-    function RepotagsTable() {
+    function ReposTable() {
         const table = useTable({
             columns,
             data,
             initialState: {
                 sortBy: [
                     {
-                        id: 'Timestamp',
+                        id: 'LastDate',
                         desc: true
                     }
                 ]
-            },
+            }
         }, useSortBy, useGlobalFilter);
         const {
             getTableProps,
@@ -83,7 +67,7 @@
         } = table;
 
         return html`
-        <form class="form-inline specific-w-md-400 w-sm-100 mb-md-3 mb-2" onSubmit=${e => e.preventDefault}>
+            <form class="form-inline specific-w-md-400 w-sm-100 mb-md-3 mb-2" onSubmit=${e => e.preventDefault}>
             <input type="search" class="form-control" placeholder="Filter by any field value" onInput=${e => setGlobalFilter(e.target.value)} value=${globalFilter}></input>
         </form>
         <div class="table-responsive">
@@ -91,7 +75,7 @@
                 <thead>
                     ${headerGroups.map(group => html`
                     <tr ...${group.getHeaderGroupProps()}>
-                        ${group.headers.map(CRDHeader)}
+                        ${group.headers.map(ReposHeader)}
                     </tr>
                     `)}
                 </thead>
@@ -101,7 +85,7 @@
             return html`
                         <tr ...${row.getRowProps()}>
                             ${row.cells.map(cell => html`
-                            <td ...${cell.getCellProps([{ className: cell.column.className }])}>${cell.render('Cell')}</td>
+                            <td ...${cell.getCellProps()}>${cell.render('Cell')}</td>
                             `)}
                         </tr>
                         `
@@ -111,23 +95,15 @@
         </div>`;
     }
 
-    const root = ReactDOM.createRoot(document.getElementById("repotags"));
-    root.render(html`<${RepotagsTable} />`);
+    const root = ReactDOM.createRoot(document.getElementById("repos"));
+    root.render(html`<${ReposTable} />`);
 </script>
 <style>
-    #repotags th {
-        text-align: center;
-    }
-
-    #repotags .sort-header {
+    #repos .sort-header {
         margin-left: 1rem;
     }
 
-    #repotags .sort-header:not(.sort-header-active) {
+    #repos .sort-header:not(.sort-header-active) {
         opacity: 0.5;
-    }
-
-    .tag-data-size {
-        text-align: right;
     }
 </style>

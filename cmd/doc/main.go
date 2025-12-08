@@ -352,6 +352,7 @@ func start() {
 	r.HandleFunc("/gvk", listAllGroups)
 	r.HandleFunc("/repo/github.com/{org}/{repo}@{tag:[A-Za-z0-9._/+-]+}", org)
 	r.HandleFunc("/repo/github.com/{org}/{repo}", listTags)
+	r.HandleFunc("/repo", listRepos)
 	r.HandleFunc("/recent", listRecentlyIndexedRepos)
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag:[A-Za-z0-9._/+-]+}", raw)
 	r.HandleFunc("/raw/github.com/{org}/{repo}", raw)
@@ -380,7 +381,22 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 	version := parameters["version"]
 	kind := parameters["kind"]
 
-	rows, err := db.Query(r.Context(), "SELECT t.repo, t.name, t.time, encode(t.hash_sha1, 'hex'), t.alias_tag_id FROM tags t INNER JOIN crds c ON (c.tag_id = t.id) WHERE c.group=$1 AND c.version=$2 AND c.kind=$3 ORDER BY t.time DESC;", group, version, kind)
+	rows, err := db.Query(r.Context(), `
+		SELECT
+		    t.repo,
+		    t.name,
+		    t.time,
+		    encode(t.hash_sha1, 'hex'),
+		    t.alias_tag_id,
+		    pg_column_size(c.data)
+		FROM tags t
+		INNER JOIN crds c
+		    ON (c.tag_id = t.id)
+		WHERE c.group=$1
+		  AND c.version=$2
+		  AND c.kind=$3
+		ORDER BY t.time DESC;
+	`, group, version, kind)
 	if err != nil {
 		logger.Error("failed to get repos for GVK", "group", group, "version", version, "kind", kind, "err", err)
 		http.Error(w, "Unable to get repositories for supplied GVK.", http.StatusInternalServerError)
@@ -402,7 +418,8 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		var timestamp time.Time
 		var hashSHA1 string
 		var aliasTagID *int
-		if err := rows.Scan(&repo, &tag, &timestamp, &hashSHA1, &aliasTagID); err != nil {
+		var dataSize *int
+		if err := rows.Scan(&repo, &tag, &timestamp, &hashSHA1, &aliasTagID, &dataSize); err != nil {
 			logger.Error("failed to scan repo row for GVK", "group", group, "version", version, "kind", kind, "err", err)
 			fmt.Fprint(w, "Unable to get repositories for supplied GVK.")
 			return
@@ -418,6 +435,7 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 			Timestamp:  timestamp,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
+			DataSize:   dataSize,
 			IsSemver:   isSemver,
 		})
 		data.Total++
@@ -439,7 +457,7 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if data.Repotags[repo][idx].HashSHA1 == latestHash {
-				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "latest")
+				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "newest")
 			}
 		}
 	}
@@ -638,6 +656,7 @@ type tagInfo struct {
 	Timestamp  time.Time
 	HashSHA1   string
 	AliasTagID *int
+	DataSize   *int
 	IsSemver   bool
 	Labels     []string
 }
@@ -658,8 +677,11 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 
 	latestTimestamp := time.Time{}
 	latestHash := ""
+	latestSemverPre := semver.Version{}
+	latestSemverRelease := semver.Version{}
 
 	tags := []tagInfo{}
+	semverCache := map[string]semver.Version{}
 	for rows.Next() {
 		var t string
 		var ts time.Time
@@ -672,11 +694,19 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		}
 
 		isSemver := false
-		if _, err := semver.ParseTolerant(t); err == nil {
+		if sv, err := semver.ParseTolerant(t); err == nil {
+			semverCache[t] = sv
+
 			isSemver = true
+			if sv.GT(latestSemverPre) && len(sv.Pre) > 0 {
+				latestSemverPre = sv
+			}
+			if sv.GT(latestSemverRelease) && len(sv.Pre) == 0 {
+				latestSemverRelease = sv
+			}
 		}
 
-		if isSemver && ts.After(latestTimestamp) {
+		if ts.After(latestTimestamp) {
 			latestTimestamp = ts
 			latestHash = hashSHA1
 		}
@@ -712,12 +742,24 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Label our tags:
+	// - "newest" for the most recently indexed semver tag (by timestamp)
+	// - "latest" for the highest non-prerelease semver tag
+	// - "next" if the highest semver tag is a prerelease
 	for idx := range tags {
+		if tags[idx].HashSHA1 == latestHash {
+			tags[idx].Labels = append(tags[idx].Labels, "newest")
+		}
 		if !tags[idx].IsSemver {
 			continue
 		}
-		if tags[idx].HashSHA1 == latestHash {
-			tags[idx].Labels = append(tags[idx].Labels, "latest")
+
+		if sv, ok := semverCache[tags[idx].Name]; ok {
+			if sv.Equals(latestSemverPre) && latestSemverPre.GT(latestSemverRelease) {
+				tags[idx].Labels = append(tags[idx].Labels, "next")
+			} else if sv.Equals(latestSemverRelease) {
+				tags[idx].Labels = append(tags[idx].Labels, "latest")
+			}
 		}
 	}
 
@@ -733,6 +775,60 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Info("rendered list tags template", "org", org, "repo", repo)
+}
+
+type listReposData struct {
+	Page  pageData
+	Repos []listReposStats
+	Total int
+}
+
+type listReposStats struct {
+	Name     string
+	LastDate time.Time
+	TagCount int
+}
+
+func listRepos(w http.ResponseWriter, r *http.Request) {
+	pageData := getPageData(r, "Repositories", false)
+	rows, err := db.Query(r.Context(), "SELECT repo, MAX(time) AS last_indexed, COUNT(1) AS tag_count FROM tags GROUP BY repo;")
+	if err != nil {
+		logger.Error("failed to get repos", "err", err)
+		http.Error(w, "Unable to get repositories.", http.StatusInternalServerError)
+	}
+
+	repos := []listReposStats{}
+	for rows.Next() {
+		var repo string
+		var tagCount int
+		var lastIndexed time.Time
+		if err := rows.Scan(&repo, &lastIndexed, &tagCount); err != nil {
+			logger.Error("failed to scan repo row", "err", err)
+			fmt.Fprint(w, "Unable to render repositories.")
+			return
+		}
+
+		repos = append(repos, listReposStats{
+			Name:     repo,
+			LastDate: lastIndexed,
+			TagCount: tagCount,
+		})
+	}
+
+	data := listReposData{
+		Page:  pageData,
+		Repos: repos,
+		Total: len(repos),
+	}
+
+	emitCacheControl(w, longCacheDuration)
+	if err := page.HTML(w, http.StatusOK, "list_repos", data); err != nil {
+		logger.Error("failed to render list repos template", "err", err)
+		fmt.Fprint(w, "Unable to render list repos template.")
+		return
+	}
+
+	logger.Info("rendered list repos template", "total_repos", len(repos))
 }
 
 type listRecentlyIndexedReposData struct {
