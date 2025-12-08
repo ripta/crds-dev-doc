@@ -47,6 +47,14 @@
         const table = useTable({
             columns,
             data,
+            initialState: {
+                sortBy: [
+                    {
+                        id: 'LastDate',
+                        desc: true
+                    }
+                ]
+            }
         }, useSortBy, useGlobalFilter);
         const {
             getTableProps,
