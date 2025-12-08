@@ -381,7 +381,21 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 	version := parameters["version"]
 	kind := parameters["kind"]
 
-	rows, err := db.Query(r.Context(), "SELECT t.repo, t.name, t.time, encode(t.hash_sha1, 'hex'), t.alias_tag_id FROM tags t INNER JOIN crds c ON (c.tag_id = t.id) WHERE c.group=$1 AND c.version=$2 AND c.kind=$3 ORDER BY t.time DESC;", group, version, kind)
+	rows, err := db.Query(r.Context(), `
+		SELECT
+		    t.repo,
+		    t.name,
+		    t.time,
+		    encode(t.hash_sha1, 'hex'),
+		    t.alias_tag_id
+		FROM tags t
+		INNER JOIN crds c
+		    ON (c.tag_id = t.id)
+		WHERE c.group=$1
+		  AND c.version=$2
+		  AND c.kind=$3
+		ORDER BY t.time DESC;
+	`, group, version, kind)
 	if err != nil {
 		logger.Error("failed to get repos for GVK", "group", group, "version", version, "kind", kind, "err", err)
 		http.Error(w, "Unable to get repositories for supplied GVK.", http.StatusInternalServerError)
