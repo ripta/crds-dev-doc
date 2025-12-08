@@ -574,9 +574,26 @@ func (g *Gitter) indexSingleTag(ctx context.Context, dir string, t tag, repo *gi
 		return fmt.Errorf("too many CRDs found in tag %s: %d (limit %d)", t.name, len(repoCRDs), maxCRDsPerTag)
 	}
 
+	// Choose longest CRD, with the assumption that it's the most complete
+	//
+	// TODO(ripta): Find a better selection criteria. Maybe validate each one,
+	//              or merge them? Merging might not always be correct.
 	allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
-	for _, crd := range repoCRDs {
-		allArgs = append(allArgs, crd.Group, crd.Version, crd.Kind, tagID, crd.Filename, crd.CRD)
+	for _, candidates := range repoCRDs {
+		var selected *models.RepoCRD
+		var maxSize int
+		for _, candidate := range candidates {
+			if size := len(candidate.CRD); size > maxSize {
+				selected = &candidate
+				maxSize = size
+			}
+		}
+
+		if selected == nil {
+			continue
+		}
+
+		allArgs = append(allArgs, selected.Group, selected.Version, selected.Kind, tagID, selected.Filename, selected.CRD)
 	}
 
 	logger.Info("found CRDs for tag", "tag", t.name, "count", len(repoCRDs))
@@ -754,7 +771,7 @@ var (
 	regPath = regexp.MustCompile(`^.*\.yaml`)
 )
 
-func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree) (map[string]models.RepoCRD, error) {
+func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree) (map[string][]models.RepoCRD, error) {
 	err := w.Checkout(&git.CheckoutOptions{
 		Hash:  *hash,
 		Force: true,
@@ -777,7 +794,7 @@ func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree
 	}
 	logger.Debug("found CRD YAML files for tag", "tag", tag, "count", len(g))
 
-	repoCRDs := map[string]models.RepoCRD{}
+	repoCRDs := map[string][]models.RepoCRD{}
 	files := getYAMLs(g, dir)
 	for file, yamls := range files {
 		for _, y := range yamls {
@@ -793,15 +810,21 @@ func getCRDsFromTag(dir string, tag string, hash *plumbing.Hash, w *git.Worktree
 				continue
 			}
 
-			logger.Debug("processed CRD", "gvk", crd.PrettyGVK(crder.GVK), "file", file, "hash", hash.String())
-			repoCRDs[crd.PrettyGVK(crder.GVK)] = models.RepoCRD{
+			shortFile := file
+			if len(shortFile) > 1000 {
+				shortFile = shortFile[len(shortFile)-1000:]
+			}
+
+			gvk := crd.PrettyGVK(crder.GVK)
+			logger.Debug("processed CRD", "gvk", gvk, "file", file, "hash", hash.String())
+			repoCRDs[gvk] = append(repoCRDs[gvk], models.RepoCRD{
 				Path:     crd.PrettyGVK(crder.GVK),
-				Filename: path.Base(file),
+				Filename: shortFile,
 				Group:    crder.GVK.Group,
 				Version:  crder.GVK.Version,
 				Kind:     crder.GVK.Kind,
 				CRD:      cbytes,
-			}
+			})
 		}
 	}
 
