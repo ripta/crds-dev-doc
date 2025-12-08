@@ -352,6 +352,7 @@ func start() {
 	r.HandleFunc("/gvk", listAllGroups)
 	r.HandleFunc("/repo/github.com/{org}/{repo}@{tag:[A-Za-z0-9._/+-]+}", org)
 	r.HandleFunc("/repo/github.com/{org}/{repo}", listTags)
+	r.HandleFunc("/repo", listRepos)
 	r.HandleFunc("/recent", listRecentlyIndexedRepos)
 	r.HandleFunc("/raw/github.com/{org}/{repo}@{tag:[A-Za-z0-9._/+-]+}", raw)
 	r.HandleFunc("/raw/github.com/{org}/{repo}", raw)
@@ -733,6 +734,60 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Info("rendered list tags template", "org", org, "repo", repo)
+}
+
+type listReposData struct {
+	Page  pageData
+	Repos []listReposStats
+	Total int
+}
+
+type listReposStats struct {
+	Name     string
+	LastDate time.Time
+	TagCount int
+}
+
+func listRepos(w http.ResponseWriter, r *http.Request) {
+	pageData := getPageData(r, "Repositories", false)
+	rows, err := db.Query(r.Context(), "SELECT repo, MAX(time) AS last_indexed, COUNT(1) AS tag_count FROM tags GROUP BY repo;")
+	if err != nil {
+		logger.Error("failed to get repos", "err", err)
+		http.Error(w, "Unable to get repositories.", http.StatusInternalServerError)
+	}
+
+	repos := []listReposStats{}
+	for rows.Next() {
+		var repo string
+		var tagCount int
+		var lastIndexed time.Time
+		if err := rows.Scan(&repo, &lastIndexed, &tagCount); err != nil {
+			logger.Error("failed to scan repo row", "err", err)
+			fmt.Fprint(w, "Unable to render repositories.")
+			return
+		}
+
+		repos = append(repos, listReposStats{
+			Name:     repo,
+			LastDate: lastIndexed,
+			TagCount: tagCount,
+		})
+	}
+
+	data := listReposData{
+		Page:  pageData,
+		Repos: repos,
+		Total: len(repos),
+	}
+
+	emitCacheControl(w, longCacheDuration)
+	if err := page.HTML(w, http.StatusOK, "list_repos", data); err != nil {
+		logger.Error("failed to render list repos template", "err", err)
+		fmt.Fprint(w, "Unable to render list repos template.")
+		return
+	}
+
+	logger.Info("rendered list repos template", "total_repos", len(repos))
 }
 
 type listRecentlyIndexedReposData struct {
