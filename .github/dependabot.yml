@@ -1,0 +1,26 @@
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'go.mod: '
+    groups:
+      # Split out any heavy-weights
+      most-deps:
+        patterns:
+          - '*'
+        exclude-patterns:
+          # linkerd2 has broken versioning, causing 18.9.1+incompatible to get
+          # incorrectly selected every time
+          - 'github.com/linkerd/linkerd2'
+          # kubernetes libraries get upgraded together under the 'kubernetes' group
+          - 'k8s.io/*'
+          - 'sigs.k8s.io/*'
+      kubernetes:
+        patterns:
+          - 'k8s.io/*'
+          - 'sigs.k8s.io/*'
