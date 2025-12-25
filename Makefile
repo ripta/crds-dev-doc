@@ -4,6 +4,9 @@ SHELL := /bin/bash
 build:
 	docker build -t crdsdev/doc:latest .
 
+run-catchup:
+	go run -v ./cmd/catchup
+
 run-doc:
 	go run -v ./cmd/doc
 
