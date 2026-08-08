@@ -372,12 +372,16 @@ func TestValidate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := NewCRDer(tc.crd)
 			if err != nil {
-				t.Errorf("Failed to create CRDer: %s", err)
-			}
-			if err := c.Validate(tc.instance); err != nil && !tc.expectedErr {
-				t.Errorf("Unexpected validation error: %s", err)
+				t.Fatalf("Failed to create CRDer: %s", err)
 			}
 
+			err = c.Validate(tc.instance)
+			if tc.expectedErr && err == nil {
+				t.Error("Expected a validation error, got nil")
+			}
+			if !tc.expectedErr && err != nil {
+				t.Errorf("Unexpected validation error: %s", err)
+			}
 		})
 	}
 }
