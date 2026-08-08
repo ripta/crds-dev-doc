@@ -1,0 +1,4 @@
+version: 1
+allow:
+  - prefix: [go]
+  - prefix: [make]
