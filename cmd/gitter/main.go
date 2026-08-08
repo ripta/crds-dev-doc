@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -40,7 +41,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 )

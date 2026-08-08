@@ -9,7 +9,6 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gorilla/mux v1.8.1
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/pkg/errors v0.9.1
 	github.com/unrolled/render v1.7.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
