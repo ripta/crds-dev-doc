@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,27 +25,28 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// getClientIP extracts the real client IP from request headers
+// getClientIP extracts the real client IP from request headers. The headers
+// come from the proxy in front of this process and are spoofable, so the
+// result is only used for logging.
 func getClientIP(r *http.Request) string {
-	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-		return ip
-	}
-	if ip := r.Header.Get("True-Client-IP"); ip != "" {
-		return ip
-	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
-
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+	for _, header := range []string{"CF-Connecting-IP", "True-Client-IP", "X-Real-IP"} {
+		if ip := r.Header.Get(header); ip != "" {
+			return ip
 		}
 	}
 
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-		return r.RemoteAddr[:idx]
+	// X-Forwarded-For accumulates left to right.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first, _, _ := strings.Cut(xff, ",")
+		if first = strings.TrimSpace(first); first != "" {
+			return first
+		}
+	}
+
+	// SplitHostPort handles the bracketed IPv6 form, and fails when RemoteAddr
+	// carries no port at all.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }
