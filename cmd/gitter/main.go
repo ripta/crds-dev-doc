@@ -201,14 +201,16 @@ func (g *Gitter) Ping(_ struct{}, reply *string) error {
 // in the background. Subsequent calls to Index for the same repo/tag while indexing
 // is in progress will return an error.
 func (g *Gitter) Index(gRepo models.GitterRepo, reply *string) error {
-	key := fmt.Sprintf("github.com/%s/%s", gRepo.Org, gRepo.Repo)
+	// CatchUp locks on the repo name as stored in the database, which is
+	// already lowercased, so this must lock on the same normalized name.
+	key := gRepo.FullName()
 	if _, ok := g.locks.LoadOrStore(key, 1); ok {
 		*reply = fmt.Sprintf("indexing %q already in progress", key)
 		return nil
 	}
 
 	ctx := context.Background()
-	fullRepo := gRepo.FullName()
+	fullRepo := key
 
 	// Check for recent failures
 	var recentFailureTime time.Time
