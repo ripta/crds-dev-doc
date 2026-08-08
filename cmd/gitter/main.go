@@ -38,8 +38,8 @@ import (
 	"github.com/crdsdev/doc/pkg/models"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
@@ -102,7 +102,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	pool, err := pgxpool.ConnectConfig(context.Background(), conn)
+	pool, err := pgxpool.NewWithConfig(context.Background(), conn)
 	if err != nil {
 		logger.Error("failed to connect to database", "err", err)
 		os.Exit(1)

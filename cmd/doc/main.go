@@ -33,8 +33,8 @@ import (
 	"github.com/crdsdev/doc/pkg/models"
 	"github.com/crdsdev/doc/pkg/validation"
 	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/unrolled/render"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -301,7 +301,7 @@ func main() {
 		logger.Error("failed to parse database config", "err", err)
 		os.Exit(1)
 	}
-	db, err = pgxpool.ConnectConfig(context.Background(), conn)
+	db, err = pgxpool.NewWithConfig(context.Background(), conn)
 	if err != nil {
 		logger.Error("failed to connect to database", "err", err)
 		os.Exit(1)
