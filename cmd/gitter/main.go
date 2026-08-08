@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -41,7 +42,6 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"golang.org/x/time/rate"
-	"gopkg.in/square/go-jose.v2/json"
 	yaml "gopkg.in/yaml.v3"
 )
 
