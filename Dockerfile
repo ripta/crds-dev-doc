@@ -1,6 +1,6 @@
 ##
 # Builder image
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26-bookworm AS build
 
 WORKDIR /usr/src/app
 
