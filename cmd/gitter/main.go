@@ -579,6 +579,7 @@ func (g *Gitter) indexSingleTag(ctx context.Context, dir string, t tag, repo *gi
 	// TODO(ripta): Find a better selection criteria. Maybe validate each one,
 	//              or merge them? Merging might not always be correct.
 	allArgs := make([]interface{}, 0, len(repoCRDs)*crdArgCount)
+	selectedCount := 0
 	for _, candidates := range repoCRDs {
 		var selected *models.RepoCRD
 		var maxSize int
@@ -594,11 +595,17 @@ func (g *Gitter) indexSingleTag(ctx context.Context, dir string, t tag, repo *gi
 		}
 
 		allArgs = append(allArgs, selected.Group, selected.Version, selected.Kind, tagID, selected.Filename, selected.CRD)
+		selectedCount++
 	}
 
-	logger.Info("found CRDs for tag", "tag", t.name, "count", len(repoCRDs))
+	if selectedCount == 0 {
+		logger.Info("skipping tag: no CRDs selected", "tag", t.name, "candidate_gvks", len(repoCRDs))
+		return nil
+	}
+
+	logger.Info("found CRDs for tag", "tag", t.name, "count", selectedCount)
 	if !g.dryRun {
-		if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, len(repoCRDs))+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
+		if _, err := g.conn.Exec(ctx, buildInsert("INSERT INTO crds(\"group\", version, kind, tag_id, filename, data) VALUES ", crdArgCount, selectedCount)+"ON CONFLICT DO NOTHING", allArgs...); err != nil {
 			return fmt.Errorf("error inserting CRDs: %w", err)
 		}
 	}
@@ -864,19 +871,30 @@ func getYAMLs(greps []git.GrepResult, dir string) map[string][][]byte {
 	return allCRDs
 }
 
-func splitYAML(file []byte, filename string) ([][]byte, error) {
+// yamlDecoder is the subset of yaml.Decoder that splitYAML uses.
+type yamlDecoder interface {
+	Decode(v any) error
+}
+
+// newYAMLDecoder is a variable so tests can reach splitYAML's recover.
+var newYAMLDecoder = func(r io.Reader) yamlDecoder {
+	return yaml.NewDecoder(r)
+}
+
+// splitYAML splits a multi-document YAML file into its CustomResourceDefinition
+// documents. The results are named so the deferred recover can set them.
+func splitYAML(file []byte, filename string) (yamls [][]byte, err error) {
 	errCount := 0
 	docIndex := -1
 
-	var yamls [][]byte
 	defer func() {
-		if err := recover(); err != nil {
-			yamls = make([][]byte, 0)
-			err = fmt.Errorf("panic while processing yaml file: %v", err)
+		if r := recover(); r != nil {
+			yamls = nil
+			err = fmt.Errorf("panic while processing yaml file %s: %v", filename, r)
 		}
 	}()
 
-	decoder := yaml.NewDecoder(bytes.NewReader(file))
+	decoder := newYAMLDecoder(bytes.NewReader(file))
 	for {
 		if errCount > 10 {
 			return nil, fmt.Errorf("encountered too many errors while processing yaml file: %s", filename)
