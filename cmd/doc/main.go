@@ -29,7 +29,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blang/semver/v4"
 	crdutil "github.com/crdsdev/doc/pkg/crd"
 	"github.com/crdsdev/doc/pkg/models"
 	"github.com/crdsdev/doc/pkg/validation"
@@ -411,8 +410,6 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		Repotags: map[string][]tagInfo{},
 	}
 
-	latestTimestamp := time.Time{}
-	latestHash := ""
 	for rows.Next() {
 		var repo, tag string
 		var timestamp time.Time
@@ -425,25 +422,14 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		isSemver := false
-		if _, err := semver.ParseTolerant(tag); err == nil {
-			isSemver = true
-		}
-
 		data.Repotags[repo] = append(data.Repotags[repo], tagInfo{
 			Name:       tag,
 			Timestamp:  timestamp,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
 			DataSize:   dataSize,
-			IsSemver:   isSemver,
 		})
 		data.Total++
-
-		if isSemver && timestamp.After(latestTimestamp) {
-			latestTimestamp = timestamp
-			latestHash = hashSHA1
-		}
 	}
 
 	if data.Total == 0 {
@@ -451,15 +437,10 @@ func listGVK(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Label per repository, so one repo's newest commit does not suppress
+	// the labels of every other repo on the page.
 	for repo := range data.Repotags {
-		for idx := range data.Repotags[repo] {
-			if !data.Repotags[repo][idx].IsSemver {
-				continue
-			}
-			if data.Repotags[repo][idx].HashSHA1 == latestHash {
-				data.Repotags[repo][idx].Labels = append(data.Repotags[repo][idx].Labels, "newest")
-			}
-		}
+		data.Repotags[repo] = labelTags(data.Repotags[repo])
 	}
 
 	if err := page.HTML(w, http.StatusOK, "list_gvk", data); err != nil {
@@ -651,16 +632,6 @@ func raw(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type tagInfo struct {
-	Name       string
-	Timestamp  time.Time
-	HashSHA1   string
-	AliasTagID *int
-	DataSize   *int
-	IsSemver   bool
-	Labels     []string
-}
-
 func listTags(w http.ResponseWriter, r *http.Request) {
 	parameters := mux.Vars(r)
 	org := parameters["org"]
@@ -675,13 +646,7 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	latestTimestamp := time.Time{}
-	latestHash := ""
-	latestSemverPre := semver.Version{}
-	latestSemverRelease := semver.Version{}
-
 	tags := []tagInfo{}
-	semverCache := map[string]semver.Version{}
 	for rows.Next() {
 		var t string
 		var ts time.Time
@@ -693,30 +658,11 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		isSemver := false
-		if sv, err := semver.ParseTolerant(t); err == nil {
-			semverCache[t] = sv
-
-			isSemver = true
-			if sv.GT(latestSemverPre) && len(sv.Pre) > 0 {
-				latestSemverPre = sv
-			}
-			if sv.GT(latestSemverRelease) && len(sv.Pre) == 0 {
-				latestSemverRelease = sv
-			}
-		}
-
-		if ts.After(latestTimestamp) {
-			latestTimestamp = ts
-			latestHash = hashSHA1
-		}
-
 		tags = append(tags, tagInfo{
 			Name:       t,
 			Timestamp:  ts,
 			HashSHA1:   hashSHA1,
 			AliasTagID: aliasTagID,
-			IsSemver:   isSemver,
 		})
 	}
 
@@ -742,26 +688,7 @@ func listTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Label our tags:
-	// - "newest" for the most recently indexed semver tag (by timestamp)
-	// - "latest" for the highest non-prerelease semver tag
-	// - "next" if the highest semver tag is a prerelease
-	for idx := range tags {
-		if tags[idx].HashSHA1 == latestHash {
-			tags[idx].Labels = append(tags[idx].Labels, "newest")
-		}
-		if !tags[idx].IsSemver {
-			continue
-		}
-
-		if sv, ok := semverCache[tags[idx].Name]; ok {
-			if sv.Equals(latestSemverPre) && latestSemverPre.GT(latestSemverRelease) {
-				tags[idx].Labels = append(tags[idx].Labels, "next")
-			} else if sv.Equals(latestSemverRelease) {
-				tags[idx].Labels = append(tags[idx].Labels, "latest")
-			}
-		}
-	}
+	tags = labelTags(tags)
 
 	emitCacheControl(w, shortCacheDuration)
 	if err := page.HTML(w, http.StatusOK, "list_tags", listTagsData{
